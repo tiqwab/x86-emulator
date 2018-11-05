@@ -3,7 +3,8 @@ package x86_emulator
 import (
 	"io"
 	"bufio"
-	)
+	"fmt"
+)
 
 type word uint16
 
@@ -21,7 +22,12 @@ type header struct {
 	exInitCS word
 }
 
-func parseHeader(reader io.Reader) *header {
+func (h header) String() string {
+	return fmt.Sprintf("header{exSignature: %v, exHeaderSize: %d, exInitSS: 0x%04X, exInitSP: 0x%04X, exInitIP: 0x%04X, exInitCS: 0x%04X}",
+		h.exSignature, h.exHeaderSize, h.exInitSS, h.exInitSP, h.exInitIP, h.exInitCS)
+}
+
+func ParseHeader(reader io.Reader) *header {
 	buf := make([]byte, 256)
 	sc := bufio.NewScanner(reader)
 	sc.Split(bufio.ScanBytes)

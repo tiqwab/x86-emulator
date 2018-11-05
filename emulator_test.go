@@ -4,7 +4,7 @@ import (
 	"testing"
 	"bytes"
 	"io"
-)
+	)
 
 func rawHeader() []byte {
 	// 32 bytes
@@ -20,7 +20,7 @@ func TestExample1(t *testing.T) {
 
 func TestParseHeaderSignature(t *testing.T) {
 	var reader io.Reader = bytes.NewReader(rawHeader())
-	actual := parseHeader(reader)
+	actual := ParseHeader(reader)
 	expected := [2]byte{'M', 'Z'}
 	if actual.exSignature != expected {
 		t.Errorf("expected %v but actual %v", expected, actual.exSignature)
@@ -29,7 +29,7 @@ func TestParseHeaderSignature(t *testing.T) {
 
 func TestParseHeaderSize(t *testing.T) {
 	var reader io.Reader = bytes.NewReader(rawHeader())
-	actual := parseHeader(reader)
+	actual := ParseHeader(reader)
 	expected := word(2)
 	if actual.exHeaderSize != expected {
 		t.Errorf("expected %v but actual %v", expected, actual.exHeaderSize)
@@ -38,7 +38,7 @@ func TestParseHeaderSize(t *testing.T) {
 
 func TestParseHeaderInitSS(t *testing.T) {
 	var reader io.Reader = bytes.NewReader(rawHeader())
-	actual := parseHeader(reader)
+	actual := ParseHeader(reader)
 	expected := word(0x0001)
 	if actual.exInitSS != expected {
 		t.Errorf("expected %v but actual %v", expected, actual.exInitSS)
@@ -47,7 +47,7 @@ func TestParseHeaderInitSS(t *testing.T) {
 
 func TestParseHeaderInitSP(t *testing.T) {
 	var reader io.Reader = bytes.NewReader(rawHeader())
-	actual := parseHeader(reader)
+	actual := ParseHeader(reader)
 	expected := word(0x1000)
 	if actual.exInitSP != expected {
 		t.Errorf("expected %v but actual %v", expected, actual.exInitSP)
@@ -56,7 +56,7 @@ func TestParseHeaderInitSP(t *testing.T) {
 
 func TestParseHeaderInitIP(t *testing.T) {
 	var reader io.Reader = bytes.NewReader(rawHeader())
-	actual := parseHeader(reader)
+	actual := ParseHeader(reader)
 	expected := word(0x0100)
 	if actual.exInitIP != expected {
 		t.Errorf("expected %v but actual %v", expected, actual.exInitIP)
@@ -65,7 +65,7 @@ func TestParseHeaderInitIP(t *testing.T) {
 
 func TestParseHeaderInitCS(t *testing.T) {
 	var reader io.Reader = bytes.NewReader(rawHeader())
-	actual := parseHeader(reader)
+	actual := ParseHeader(reader)
 	expected := word(0x0002)
 	if actual.exInitCS != expected {
 		t.Errorf("expected %v but actual %v", expected, actual.exInitCS)
