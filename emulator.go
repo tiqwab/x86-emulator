@@ -27,27 +27,56 @@ func (h header) String() string {
 		h.exSignature, h.exHeaderSize, h.exInitSS, h.exInitSP, h.exInitIP, h.exInitCS)
 }
 
-func ParseHeader(reader io.Reader) *header {
-	buf := make([]byte, 256)
+func ParseHeader(reader io.Reader) (*header, error) {
+	var buf []byte
 	sc := bufio.NewScanner(reader)
 	sc.Split(bufio.ScanBytes)
 
-	buf = parseBytes(2, sc)
+	buf, err := parseBytes(2, sc)
+	if err != nil {
+		return nil, err
+	}
 	exSignature := [2]byte{buf[0], buf[1]}
 
-	parseBytes(6, sc)
+	_, err = parseBytes(6, sc)
+	if err != nil {
+		return nil, err
+	}
 
-	exHeaderSize := parseWord(sc)
+	exHeaderSize, err := parseWord(sc)
+	if err != nil {
+		return nil, err
+	}
 
-	parseBytes(4, sc)
+	_, err = parseBytes(4, sc)
+	if err != nil {
+		return nil, err
+	}
 
-	exInitSS := parseWord(sc)
-	exInitSP := parseWord(sc)
+	exInitSS, err := parseWord(sc)
+	if err != nil {
+		return nil, err
+	}
 
-	parseBytes(2, sc)
+	exInitSP, err := parseWord(sc)
+	if err != nil {
+		return nil, err
+	}
 
-	exInitIP := parseWord(sc)
-	exInitCS := parseWord(sc)
+	_, err = parseBytes(2, sc)
+	if err != nil {
+		return nil, err
+	}
+
+	exInitIP, err := parseWord(sc)
+	if err != nil {
+		return nil, err
+	}
+
+	exInitCS, err := parseWord(sc)
+	if err != nil {
+		return nil, err
+	}
 
 	return &header{
 		exSignature: exSignature,
@@ -56,23 +85,61 @@ func ParseHeader(reader io.Reader) *header {
 		exInitSP: exInitSP,
 		exInitIP: exInitIP,
 		exInitCS: exInitCS,
-	}
+	}, nil
 }
 
-func parseBytes(n int, sc *bufio.Scanner) []byte {
+func parseBytes(n int, sc *bufio.Scanner) ([]byte, error) {
 	buf := make([]byte, n)
 	for i := 0; i < n; i++ {
 		if b := sc.Scan(); b {
 			buf[i] = sc.Bytes()[0]
 		} else {
-			return nil
+			return nil, fmt.Errorf("failed to parse %d bytes\n", n)
 		}
 	}
-	return buf
+	return buf, nil
+}
+
+func parseByte(sc *bufio.Scanner) (byte, error) {
+	bs, err := parseBytes(1, sc)
+	if err != nil {
+		return 0, err
+	}
+	return bs[0], nil
 }
 
 // assume little-endian
-func parseWord(sc *bufio.Scanner) word {
-	buf := parseBytes(2, sc)
-	return word(buf[1]) << 8 + word(buf[0])
+func parseWord(sc *bufio.Scanner) (word, error) {
+	buf, err := parseBytes(2, sc)
+	if err != nil {
+		return 0, err
+	}
+	return word(buf[1]) << 8 + word(buf[0]), nil
+}
+
+type instInt struct{
+	operand uint8
+}
+
+func DecodeInst(reader io.Reader) (instInt, error) {
+	var inst instInt
+	sc := bufio.NewScanner(reader)
+	sc.Split(bufio.ScanBytes)
+
+	rawOpcode, err := parseByte(sc)
+	if err != nil {
+		return inst, err
+	}
+
+	switch rawOpcode {
+	case 0xcd:
+		operand, err := parseByte(sc)
+		if err != nil {
+			return inst, err
+		}
+		inst = instInt{operand: operand}
+	default:
+		return inst, fmt.Errorf("unknown opcode: %v\n", rawOpcode)
+	}
+	return inst, nil
 }
