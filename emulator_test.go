@@ -141,3 +141,16 @@ func TestDecodeShlAX(t *testing.T) {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
 }
+
+func TestDecodeShlCX(t *testing.T) {
+	// shl ax,1
+	var reader io.Reader = bytes.NewReader([]byte{0xc1, 0xe1, 0x01})
+	actual, err := DecodeInst(reader)
+	if err != nil {
+		t.Error(err)
+	}
+	expected := instShl{register: CX, imm: 0x0001}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}

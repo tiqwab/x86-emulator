@@ -199,9 +199,12 @@ func DecodeInst(reader io.Reader) (interface{}, error) {
 		switch rm {
 		case AX:
 			inst = instShl{register: AX, imm: imm}
+		case CX:
+			inst = instShl{register: CX, imm: imm}
 		default:
 			return nil, fmt.Errorf("unknown register: %d", rm)
 		}
+		
 	// int imm8
 	case 0xcd:
 		operand, err := parseByte(sc)
