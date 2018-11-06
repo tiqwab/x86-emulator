@@ -134,7 +134,7 @@ const (
 	DI = registerW(7)
 )
 
-type instInt struct{
+type instInt struct {
 	operand uint8
 }
 
@@ -148,6 +148,24 @@ type instShl struct {
 	imm uint8
 }
 
+type instAdd struct {
+	dest registerW
+	imm uint8
+}
+
+func decodeModRegRM(sc *bufio.Scanner) (byte, byte, registerW, error) {
+	buf, err := parseByte(sc)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+
+	mod := (buf & 0xc0) >> 6     // 0b11000000
+	reg := (buf & 0x38) >> 3     // 0b00111000
+	rm  := registerW(buf & 0x07) // 0b00000111
+
+	return mod, reg, rm, nil
+}
+
 func DecodeInst(reader io.Reader) (interface{}, error) {
 	var inst interface{}
 	sc := bufio.NewScanner(reader)
@@ -159,6 +177,29 @@ func DecodeInst(reader io.Reader) (interface{}, error) {
 	}
 
 	switch rawOpcode {
+	// add r/m16, imm8
+	case 0x83:
+		mod, reg, rm, err := decodeModRegRM(sc)
+		if err != nil {
+			return inst, err
+		}
+
+		if mod != 3 {
+			return nil, fmt.Errorf("expect mod is 0b11 but %02b", mod)
+		}
+		if reg != 0 {
+			return nil, fmt.Errorf("expect reg is /0 but %d", reg)
+		}
+
+		imm, err := parseByte(sc)
+
+		switch rm {
+		case AX:
+			inst = instAdd{dest: AX, imm: imm}
+		default:
+			return nil, fmt.Errorf("unknown register: %d", rm)
+		}
+
 	// mov r16,imm16
 	case 0xb8:
 		// ax
@@ -178,14 +219,10 @@ func DecodeInst(reader io.Reader) (interface{}, error) {
 	// shl r/m16,imm8
 	// FIXME: handle memory address as source
 	case 0xc1:
-		buf, err := parseByte(sc)
+		mod, reg, rm, err := decodeModRegRM(sc)
 		if err != nil {
 			return inst, err
 		}
-
-		mod := (buf & 0xc0) >> 6     // 0b11000000
-		reg := (buf & 0x38) >> 3     // 0b00111000
-		rm  := registerW(buf & 0x07) // 0b00000111
 
 		if mod != 3 {
 			return nil, fmt.Errorf("expect mod is 0b11 but %02b", mod)
@@ -204,7 +241,7 @@ func DecodeInst(reader io.Reader) (interface{}, error) {
 		default:
 			return nil, fmt.Errorf("unknown register: %d", rm)
 		}
-		
+
 	// int imm8
 	case 0xcd:
 		operand, err := parseByte(sc)
@@ -213,7 +250,7 @@ func DecodeInst(reader io.Reader) (interface{}, error) {
 		}
 		inst = instInt{operand: operand}
 	default:
-		return inst, fmt.Errorf("unknown opcode: %v", rawOpcode)
+		return inst, fmt.Errorf("unknown opcode: 0x%02x", rawOpcode)
 	}
 	return inst, nil
 }
