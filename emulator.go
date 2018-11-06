@@ -143,6 +143,11 @@ type instMov struct {
 	imm word
 }
 
+type instShl struct {
+	register registerW
+	imm uint8
+}
+
 func DecodeInst(reader io.Reader) (interface{}, error) {
 	var inst interface{}
 	sc := bufio.NewScanner(reader)
@@ -170,6 +175,33 @@ func DecodeInst(reader io.Reader) (interface{}, error) {
 		}
 		inst = instMov{dest: CX, imm: imm}
 
+	// shl r/m16,imm8
+	// FIXME: handle memory address as source
+	case 0xc1:
+		buf, err := parseByte(sc)
+		if err != nil {
+			return inst, err
+		}
+
+		mod := (buf & 0xc0) >> 6     // 0b11000000
+		reg := (buf & 0x38) >> 3     // 0b00111000
+		rm  := registerW(buf & 0x07) // 0b00000111
+
+		if mod != 3 {
+			return nil, fmt.Errorf("expect mod is 0b11 but %02b", mod)
+		}
+		if reg != 4 {
+			return nil, fmt.Errorf("expect reg is /4 but %d", reg)
+		}
+
+		imm, err := parseByte(sc)
+
+		switch rm {
+		case AX:
+			inst = instShl{register: AX, imm: imm}
+		default:
+			return nil, fmt.Errorf("unknown register: %d", rm)
+		}
 	// int imm8
 	case 0xcd:
 		operand, err := parseByte(sc)
@@ -178,7 +210,7 @@ func DecodeInst(reader io.Reader) (interface{}, error) {
 		}
 		inst = instInt{operand: operand}
 	default:
-		return inst, fmt.Errorf("unknown opcode: %v\n", rawOpcode)
+		return inst, fmt.Errorf("unknown opcode: %v", rawOpcode)
 	}
 	return inst, nil
 }
