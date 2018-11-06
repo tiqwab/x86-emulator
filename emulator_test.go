@@ -167,3 +167,16 @@ func TestDecodeAddAX(t *testing.T) {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
 }
+
+func TestDecodeAddCX(t *testing.T) {
+	// add ax,1
+	var reader io.Reader = bytes.NewReader([]byte{0x83, 0xc1, 0x01})
+	actual, err := DecodeInst(reader)
+	if err != nil {
+		t.Error(err)
+	}
+	expected := instAdd{dest: CX, imm: 0x0001}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
