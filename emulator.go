@@ -154,15 +154,24 @@ func DecodeInst(reader io.Reader) (interface{}, error) {
 	}
 
 	switch rawOpcode {
+	// mov r16,imm16
 	case 0xb8:
-		// mov r16,imm16
+		// ax
 		imm, err := parseWord(sc)
 		if err != nil {
 			return inst, err
 		}
 		inst = instMov{dest: AX, imm: imm}
+	case 0xb9:
+		// cx
+		imm, err := parseWord(sc)
+		if err != nil {
+			return inst, err
+		}
+		inst = instMov{dest: CX, imm: imm}
+
+	// int imm8
 	case 0xcd:
-		// int imm8
 		operand, err := parseByte(sc)
 		if err != nil {
 			return inst, err

@@ -115,3 +115,16 @@ func TestDecodeMovAX(t *testing.T) {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
 }
+
+func TestDecodeMovCX(t *testing.T) {
+	// mov cx,1
+	var reader io.Reader = bytes.NewReader([]byte{0xb9, 0x01, 0x00})
+	actual, err := DecodeInst(reader)
+	if err != nil {
+		t.Error(err)
+	}
+	expected := instMov{dest: CX, imm: 0x0001}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
