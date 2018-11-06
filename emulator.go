@@ -4,7 +4,10 @@ import (
 	"io"
 	"bufio"
 	"fmt"
-)
+	)
+
+// ref1. https://en.wikibooks.org/wiki/X86_Assembly/Machine_Language_Conversion
+// ref2. https://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-instruction-set-reference-manual-325383.pdf
 
 type word uint16
 
@@ -117,12 +120,31 @@ func parseWord(sc *bufio.Scanner) (word, error) {
 	return word(buf[1]) << 8 + word(buf[0]), nil
 }
 
+type registerW uint8
+
+// ref2. 3.1.1.1
+const (
+	AX = registerW(0)
+	CX = registerW(1)
+	DX = registerW(2)
+	BX = registerW(3)
+	SP = registerW(4)
+	BP = registerW(5)
+	SI = registerW(6)
+	DI = registerW(7)
+)
+
 type instInt struct{
 	operand uint8
 }
 
-func DecodeInst(reader io.Reader) (instInt, error) {
-	var inst instInt
+type instMov struct {
+	dest registerW
+	imm word
+}
+
+func DecodeInst(reader io.Reader) (interface{}, error) {
+	var inst interface{}
 	sc := bufio.NewScanner(reader)
 	sc.Split(bufio.ScanBytes)
 
@@ -132,7 +154,15 @@ func DecodeInst(reader io.Reader) (instInt, error) {
 	}
 
 	switch rawOpcode {
+	case 0xb8:
+		// mov r16,imm16
+		imm, err := parseWord(sc)
+		if err != nil {
+			return inst, err
+		}
+		inst = instMov{dest: AX, imm: imm}
 	case 0xcd:
+		// int imm8
 		operand, err := parseByte(sc)
 		if err != nil {
 			return inst, err
