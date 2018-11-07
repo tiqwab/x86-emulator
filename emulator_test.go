@@ -20,7 +20,7 @@ func TestExample1(t *testing.T) {
 
 func TestParseHeaderSignature(t *testing.T) {
 	var reader io.Reader = bytes.NewReader(rawHeader())
-	actual, err := ParseHeader(reader)
+	actual, err := parseHeader(reader)
 	if err != nil {
 		t.Error(err)
 	}
@@ -32,7 +32,7 @@ func TestParseHeaderSignature(t *testing.T) {
 
 func TestParseHeaderSize(t *testing.T) {
 	var reader io.Reader = bytes.NewReader(rawHeader())
-	actual, err := ParseHeader(reader)
+	actual, err := parseHeader(reader)
 	if err != nil {
 		t.Error(err)
 	}
@@ -44,7 +44,7 @@ func TestParseHeaderSize(t *testing.T) {
 
 func TestParseHeaderInitSS(t *testing.T) {
 	var reader io.Reader = bytes.NewReader(rawHeader())
-	actual, err := ParseHeader(reader)
+	actual, err := parseHeader(reader)
 	if err != nil {
 		t.Error(err)
 	}
@@ -56,7 +56,7 @@ func TestParseHeaderInitSS(t *testing.T) {
 
 func TestParseHeaderInitSP(t *testing.T) {
 	var reader io.Reader = bytes.NewReader(rawHeader())
-	actual, err := ParseHeader(reader)
+	actual, err := parseHeader(reader)
 	if err != nil {
 		t.Error(err)
 	}
@@ -68,7 +68,7 @@ func TestParseHeaderInitSP(t *testing.T) {
 
 func TestParseHeaderInitIP(t *testing.T) {
 	var reader io.Reader = bytes.NewReader(rawHeader())
-	actual, err := ParseHeader(reader)
+	actual, err := parseHeader(reader)
 	if err != nil {
 		t.Error(err)
 	}
@@ -80,7 +80,7 @@ func TestParseHeaderInitIP(t *testing.T) {
 
 func TestParseHeaderInitCS(t *testing.T) {
 	var reader io.Reader = bytes.NewReader(rawHeader())
-	actual, err := ParseHeader(reader)
+	actual, err := parseHeader(reader)
 	if err != nil {
 		t.Error(err)
 	}
@@ -93,7 +93,7 @@ func TestParseHeaderInitCS(t *testing.T) {
 func TestDecodeInstInt(t *testing.T) {
 	// int 21
 	var reader io.Reader = bytes.NewReader([]byte{0xcd, 0x21})
-	actual, err := DecodeInst(reader)
+	actual, err := decodeInst(reader)
 	if err != nil {
 		t.Error(err)
 	}
@@ -106,7 +106,7 @@ func TestDecodeInstInt(t *testing.T) {
 func TestDecodeMovAX(t *testing.T) {
 	// mov ax,1
 	var reader io.Reader = bytes.NewReader([]byte{0xb8, 0x01, 0x00})
-	actual, err := DecodeInst(reader)
+	actual, err := decodeInst(reader)
 	if err != nil {
 		t.Error(err)
 	}
@@ -119,7 +119,7 @@ func TestDecodeMovAX(t *testing.T) {
 func TestDecodeMovCX(t *testing.T) {
 	// mov cx,1
 	var reader io.Reader = bytes.NewReader([]byte{0xb9, 0x01, 0x00})
-	actual, err := DecodeInst(reader)
+	actual, err := decodeInst(reader)
 	if err != nil {
 		t.Error(err)
 	}
@@ -132,7 +132,7 @@ func TestDecodeMovCX(t *testing.T) {
 func TestDecodeShlAX(t *testing.T) {
 	// shl ax,1
 	var reader io.Reader = bytes.NewReader([]byte{0xc1, 0xe0, 0x01})
-	actual, err := DecodeInst(reader)
+	actual, err := decodeInst(reader)
 	if err != nil {
 		t.Error(err)
 	}
@@ -145,7 +145,7 @@ func TestDecodeShlAX(t *testing.T) {
 func TestDecodeShlCX(t *testing.T) {
 	// shl cx,1
 	var reader io.Reader = bytes.NewReader([]byte{0xc1, 0xe1, 0x01})
-	actual, err := DecodeInst(reader)
+	actual, err := decodeInst(reader)
 	if err != nil {
 		t.Error(err)
 	}
@@ -158,7 +158,7 @@ func TestDecodeShlCX(t *testing.T) {
 func TestDecodeAddAX(t *testing.T) {
 	// add ax,1
 	var reader io.Reader = bytes.NewReader([]byte{0x83, 0xc0, 0x01})
-	actual, err := DecodeInst(reader)
+	actual, err := decodeInst(reader)
 	if err != nil {
 		t.Error(err)
 	}
@@ -171,12 +171,28 @@ func TestDecodeAddAX(t *testing.T) {
 func TestDecodeAddCX(t *testing.T) {
 	// add ax,1
 	var reader io.Reader = bytes.NewReader([]byte{0x83, 0xc1, 0x01})
-	actual, err := DecodeInst(reader)
+	actual, err := decodeInst(reader)
 	if err != nil {
 		t.Error(err)
 	}
 	expected := instAdd{dest: CX, imm: 0x0001}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
+func movExe() []byte {
+	// mov ax,1
+	code := []byte{0xb8, 0x01, 0x00}
+	return append(rawHeader(), code...)
+}
+
+func TestRunExe(t *testing.T) {
+	actual, err := RunExe(bytes.NewReader(movExe()))
+	if err != nil {
+		t.Error(err)
+	}
+	if actual.ax != 0x0001 {
+		t.Errorf("register ax is expected to be 0x%04x but actual 0x%04x", 0x0001, actual.ax)
 	}
 }

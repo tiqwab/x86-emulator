@@ -30,10 +30,14 @@ func (h header) String() string {
 		h.exSignature, h.exHeaderSize, h.exInitSS, h.exInitSP, h.exInitIP, h.exInitCS)
 }
 
-func ParseHeader(reader io.Reader) (*header, error) {
-	var buf []byte
+func parseHeader(reader io.Reader) (*header, error) {
 	sc := bufio.NewScanner(reader)
 	sc.Split(bufio.ScanBytes)
+	return parseHeaderWithScanner(sc)
+}
+
+func parseHeaderWithScanner(sc *bufio.Scanner) (*header, error) {
+	var buf []byte
 
 	buf, err := parseBytes(2, sc)
 	if err != nil {
@@ -81,6 +85,11 @@ func ParseHeader(reader io.Reader) (*header, error) {
 		return nil, err
 	}
 
+	_, err = parseBytes(8, sc)
+	if err != nil {
+		return nil, err
+	}
+
 	return &header{
 		exSignature: exSignature,
 		exHeaderSize: exHeaderSize,
@@ -97,7 +106,11 @@ func parseBytes(n int, sc *bufio.Scanner) ([]byte, error) {
 		if b := sc.Scan(); b {
 			buf[i] = sc.Bytes()[0]
 		} else {
-			return nil, fmt.Errorf("failed to parse %d bytes\n", n)
+			if err := sc.Err(); err != nil {
+				return nil, err
+			} else {
+				return nil, io.EOF
+			}
 		}
 	}
 	return buf, nil
@@ -166,10 +179,14 @@ func decodeModRegRM(sc *bufio.Scanner) (byte, byte, registerW, error) {
 	return mod, reg, rm, nil
 }
 
-func DecodeInst(reader io.Reader) (interface{}, error) {
-	var inst interface{}
+func decodeInst(reader io.Reader) (interface{}, error) {
 	sc := bufio.NewScanner(reader)
 	sc.Split(bufio.ScanBytes)
+	return decodeInstWithScanner(sc)
+}
+
+func decodeInstWithScanner(sc *bufio.Scanner) (interface{}, error) {
+	var inst interface{}
 
 	rawOpcode, err := parseByte(sc)
 	if err != nil {
@@ -255,4 +272,62 @@ func DecodeInst(reader io.Reader) (interface{}, error) {
 		return inst, fmt.Errorf("unknown opcode: 0x%02x", rawOpcode)
 	}
 	return inst, nil
+}
+
+type state struct {
+	ax, cx, ss, sp, cs, ip word
+}
+
+func newState(ss, sp, cs, ip word) state {
+	return state{}
+}
+
+func mov(inst instMov, state state) (state, error) {
+	switch inst.dest {
+	case AX:
+		state.ax = inst.imm
+	case CX:
+		state.cx = inst.imm
+	default:
+		return state, fmt.Errorf("unknown register: %v", inst.dest)
+	}
+	return state, nil
+}
+
+func execute(shouldBeInst interface{}, state state) (state, error) {
+	switch inst := shouldBeInst.(type) {
+	case instMov:
+		return mov(inst, state)
+	default:
+		return state, fmt.Errorf("unknown inst: %v", shouldBeInst)
+	}
+}
+
+func RunExe(reader io.Reader) (state, error) {
+	sc := bufio.NewScanner(reader)
+	sc.Split(bufio.ScanBytes)
+	header, err := parseHeaderWithScanner(sc)
+	if err != nil {
+		return state{}, err
+	}
+
+	s := newState(header.exInitSS, header.exInitSP, header.exInitCS, header.exInitIP)
+
+	for {
+		inst, err := decodeInstWithScanner(sc)
+		if err != nil {
+			if err == io.EOF {
+				break
+			} else {
+				return state{}, err
+			}
+		}
+
+		s, err = execute(inst, s)
+		if err != nil {
+			return state{}, err
+		}
+	}
+
+	return s, nil
 }
