@@ -4,7 +4,8 @@ import (
 	"io"
 	"bufio"
 	"fmt"
-	)
+	"os"
+)
 
 // ref1. https://en.wikibooks.org/wiki/X86_Assembly/Machine_Language_Conversion
 // ref2. https://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-instruction-set-reference-manual-325383.pdf
@@ -282,7 +283,7 @@ func newState(ss, sp, cs, ip word) state {
 	return state{}
 }
 
-func mov(inst instMov, state state) (state, error) {
+func execMov(inst instMov, state state) (state, error) {
 	switch inst.dest {
 	case AX:
 		state.ax = inst.imm
@@ -294,7 +295,7 @@ func mov(inst instMov, state state) (state, error) {
 	return state, nil
 }
 
-func shl(inst instShl, state state) (state, error) {
+func execShl(inst instShl, state state) (state, error) {
 	switch inst.register {
 	case AX:
 		state.ax <<= inst.imm
@@ -306,7 +307,7 @@ func shl(inst instShl, state state) (state, error) {
 	return state, nil
 }
 
-func add(inst instAdd, state state) (state, error) {
+func execAdd(inst instAdd, state state) (state, error) {
 	switch inst.dest {
 	case AX:
 		state.ax += word(inst.imm)
@@ -318,14 +319,26 @@ func add(inst instAdd, state state) (state, error) {
 	return state, nil
 }
 
+func execInt(inst instInt, state state) (state, error) {
+	switch inst.operand {
+	case 21:
+		os.Exit(99) // FIXME: accept exitcode
+	default:
+		return state, fmt.Errorf("unknown operand: %v", inst.operand)
+	}
+	return state, nil
+}
+
 func execute(shouldBeInst interface{}, state state) (state, error) {
 	switch inst := shouldBeInst.(type) {
 	case instMov:
-		return mov(inst, state)
+		return execMov(inst, state)
 	case instShl:
-		return shl(inst, state)
+		return execShl(inst, state)
 	case instAdd:
-		return add(inst, state)
+		return execAdd(inst, state)
+	case instInt:
+		return execInt(inst, state)
 	default:
 		return state, fmt.Errorf("unknown inst: %T", shouldBeInst)
 	}
