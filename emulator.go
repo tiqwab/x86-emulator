@@ -294,12 +294,26 @@ func mov(inst instMov, state state) (state, error) {
 	return state, nil
 }
 
+func shl(inst instShl, state state) (state, error) {
+	switch inst.register {
+	case AX:
+		state.ax <<= inst.imm
+	case CX:
+		state.cx <<= inst.imm
+	default:
+		return state, fmt.Errorf("unknown register: %v", inst.register)
+	}
+	return state, nil
+}
+
 func execute(shouldBeInst interface{}, state state) (state, error) {
 	switch inst := shouldBeInst.(type) {
 	case instMov:
 		return mov(inst, state)
+	case instShl:
+		return shl(inst, state)
 	default:
-		return state, fmt.Errorf("unknown inst: %v", shouldBeInst)
+		return state, fmt.Errorf("unknown inst: %T", shouldBeInst)
 	}
 }
 

@@ -6,7 +6,9 @@ import (
 	"io"
 	)
 
-func rawHeader() []byte {
+type machineCode []byte
+
+func rawHeader() machineCode {
 	// 32 bytes
 	return []byte{
 		0x4d, 0x5a, 0x2b, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x01, 0xff, 0xff, 0x01, 0x00,
@@ -181,18 +183,34 @@ func TestDecodeAddCX(t *testing.T) {
 	}
 }
 
-func movExe() []byte {
+func (code machineCode) withMov() machineCode {
 	// mov ax,1
-	code := []byte{0xb8, 0x01, 0x00}
-	return append(rawHeader(), code...)
+	mov := []byte{0xb8, 0x01, 0x00}
+	return append(code, mov...)
 }
 
 func TestRunExe(t *testing.T) {
-	actual, err := RunExe(bytes.NewReader(movExe()))
+	actual, err := RunExe(bytes.NewReader(rawHeader().withMov()))
 	if err != nil {
 		t.Error(err)
 	}
 	if actual.ax != 0x0001 {
 		t.Errorf("register ax is expected to be 0x%04x but actual 0x%04x", 0x0001, actual.ax)
+	}
+}
+
+func (code machineCode) withShl() machineCode {
+	// shl ax,1
+	shl := []byte{0xc1, 0xe0, 0x01}
+	return append(code, shl...)
+}
+
+func TestShlExe(t *testing.T) {
+	actual, err := RunExe(bytes.NewReader(rawHeader().withMov().withShl()))
+	if err != nil {
+		t.Error(err)
+	}
+	if actual.ax != 0x0002 {
+		t.Errorf("register cx is expected to be 0x%04x but actual 0x%04x", 0x0002, actual.ax)
 	}
 }
