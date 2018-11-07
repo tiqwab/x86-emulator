@@ -211,6 +211,22 @@ func TestShlExe(t *testing.T) {
 		t.Error(err)
 	}
 	if actual.ax != 0x0002 {
-		t.Errorf("register cx is expected to be 0x%04x but actual 0x%04x", 0x0002, actual.ax)
+		t.Errorf("register ax is expected to be 0x%04x but actual 0x%04x", 0x0002, actual.ax)
+	}
+}
+
+func (code machineCode) withAdd() machineCode {
+	// add ax,1
+	add := []byte{0x83, 0xc0, 0x03}
+	return append(code, add...)
+}
+
+func TestAddExe(t *testing.T) {
+	actual, err := RunExe(bytes.NewReader(rawHeader().withAdd()))
+	if err != nil {
+		t.Error(err)
+	}
+	if actual.ax != 0x0003 {
+		t.Errorf("register ax is expected to be 0x%04x but actual 0x%04x", 0x0003, actual.ax)
 	}
 }
