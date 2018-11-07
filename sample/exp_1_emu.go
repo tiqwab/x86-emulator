@@ -7,6 +7,9 @@ import (
 )
 
 func main() {
-	header := x86_emulator.ParseHeader(os.Stdin)
-	fmt.Println(header)
+	state, err := x86_emulator.RunExe(os.Stdin)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(state)
 }

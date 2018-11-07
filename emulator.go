@@ -322,7 +322,7 @@ func execAdd(inst instAdd, state state) (state, error) {
 func execInt(inst instInt, state state) (state, error) {
 	switch inst.operand {
 	case 0x21:
-		os.Exit(99) // FIXME: accept exitcode
+		os.Exit(99) // FIXME: accept exitcode, test
 	default:
 		return state, fmt.Errorf("unknown operand: %v", inst.operand)
 	}
