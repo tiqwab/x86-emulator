@@ -231,12 +231,47 @@ func TestAddExe(t *testing.T) {
 	}
 }
 
-func TestInt21_4c(t *testing.T) {
+func TestInt21_4c_ax(t *testing.T) {
 	// exit status 1
 	b := rawHeader()
 	b = append(b, []byte{0xb8, 0x4c, 0x00}...) // mov ax,4ch
 	b = append(b, []byte{0xc1, 0xe0, 0x08}...) // shl ax,8
 	b = append(b, []byte{0x83, 0xc0, 0x01}...) // add ax,01h
+	b = append(b, []byte{0xcd, 0x21}...)       // int 21h
+
+	var exitCode uint8;
+	intHandlers := make(intHandlers)
+	intHandlers[0x4c] = func(s state) error {
+		exitCode = s.al()
+		return nil
+	}
+
+	actual, err := runExeWithCustomIntHandlers(bytes.NewReader(b), intHandlers)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if actual.ax != 0x4c01 {
+		t.Errorf("ax is illegal: %04x", actual.ax)
+	}
+	if actual.al() != 0x01 {
+		t.Errorf("al is illegal: %02x", actual.al())
+	}
+	if actual.ah() != 0x4c {
+		t.Errorf("ah is illegal: %02x", actual.ah())
+	}
+	if exitCode != 0x01 {
+		t.Errorf("exitCode is expected to be %02x but %02x", 0x01, exitCode)
+	}
+}
+
+func TestInt21_4c_cx(t *testing.T) {
+	// exit status 1
+	b := rawHeader()
+	b = append(b, []byte{0xb9, 0x4c, 0x00}...) // mov cx,4ch
+	b = append(b, []byte{0xc1, 0xe1, 0x08}...) // shl cx,8
+	b = append(b, []byte{0x83, 0xc1, 0x01}...) // add cx,01h
+	b = append(b, []byte{0x8b, 0xc1}...)       // mov ax,cx
 	b = append(b, []byte{0xcd, 0x21}...)       // int 21h
 
 	var exitCode uint8;

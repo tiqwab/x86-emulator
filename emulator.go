@@ -148,6 +148,28 @@ const (
 	DI = registerW(7)
 )
 
+func toRegisterW(x uint8) (registerW, error) {
+	switch x {
+	case 0:
+		return AX, nil
+	case 1:
+		return CX, nil
+	case 2:
+		return DX, nil
+	case 3:
+		return BX, nil
+	case 4:
+		return SP, nil
+	case 5:
+		return BP, nil
+	case 6:
+		return SI, nil
+	case 7:
+		return DI, nil
+	}
+	return 0, fmt.Errorf("illegal number for registerW: %d", x)
+}
+
 type instInt struct {
 	operand uint8
 }
@@ -155,6 +177,11 @@ type instInt struct {
 type instMov struct {
 	dest registerW
 	imm word
+}
+
+type instMovRegReg struct {
+	dest registerW
+	src registerW
 }
 
 type instShl struct {
@@ -218,6 +245,28 @@ func decodeInstWithScanner(sc *bufio.Scanner) (interface{}, error) {
 			inst = instAdd{dest: CX, imm: imm}
 		default:
 			return nil, fmt.Errorf("unknown register: %d", rm)
+		}
+
+	// 8b /r (/r indicates that the ModR/M byte of the instruction contains a register operand and an r/m operand)
+	// mov r16,r/m16
+	case 0x8b:
+		mod, reg, rm, err := decodeModRegRM(sc)
+		if err != nil {
+			return inst, err
+		}
+
+		if mod == 3 {
+			dest, err := toRegisterW(uint8(reg))
+			if err != nil {
+				return inst, fmt.Errorf("illegal reg value for registerW: %d", reg)
+			}
+			src, err := toRegisterW(uint8(rm))
+			if err != nil {
+				return inst, fmt.Errorf("illegal rm value for registerW: %d", rm)
+			}
+			inst = instMovRegReg{dest: dest, src: src}
+		} else {
+			return inst, fmt.Errorf("not yet implemented for mod 0x%02x", mod)
 		}
 
 	// mov r16,imm16
@@ -309,12 +358,43 @@ func (s state) ah() uint8 {
 	return uint8(s.ax >> 8)
 }
 
+func (s state) reg(r registerW) (word, error) {
+	switch r {
+	case AX:
+		return s.ax, nil
+	case CX:
+		return s.cx, nil
+	default:
+		return 0, fmt.Errorf("illegal registerW or not implemented: %d", r)
+	}
+}
+
 func execMov(inst instMov, state state) (state, error) {
 	switch inst.dest {
 	case AX:
 		state.ax = inst.imm
 	case CX:
 		state.cx = inst.imm
+	default:
+		return state, fmt.Errorf("unknown register: %v", inst.dest)
+	}
+	return state, nil
+}
+
+func execMovRegReg(inst instMovRegReg, state state) (state, error) {
+	switch inst.dest {
+	case AX:
+		v, err := state.reg(inst.src)
+		if err != nil {
+			return state, err
+		}
+		state.ax = v
+	case CX:
+		v, err := state.reg(inst.src)
+		if err != nil {
+			return state, err
+		}
+		state.cx = v
 	default:
 		return state, fmt.Errorf("unknown register: %v", inst.dest)
 	}
@@ -366,6 +446,8 @@ func execute(shouldBeInst interface{}, state state) (state, error) {
 	switch inst := shouldBeInst.(type) {
 	case instMov:
 		return execMov(inst, state)
+	case instMovRegReg:
+		return execMovRegReg(inst, state)
 	case instShl:
 		return execShl(inst, state)
 	case instAdd:
