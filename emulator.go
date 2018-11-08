@@ -283,6 +283,14 @@ func newState(ss, sp, cs, ip word) state {
 	return state{}
 }
 
+func (s state) al() uint8 {
+	return uint8(s.ax & 0x00ff)
+}
+
+func (s state) ah() uint8 {
+	return uint8(s.ax >> 4)
+}
+
 func execMov(inst instMov, state state) (state, error) {
 	switch inst.dest {
 	case AX:
@@ -322,7 +330,11 @@ func execAdd(inst instAdd, state state) (state, error) {
 func execInt(inst instInt, state state) (state, error) {
 	switch inst.operand {
 	case 0x21:
-		os.Exit(99) // FIXME: accept exitcode, test
+		if state.ah() == 0x4c {
+			os.Exit(int(state.al()))
+		} else {
+			return state, fmt.Errorf("int 21 with unknown value of ax: %04x", state.ax)
+		}
 	default:
 		return state, fmt.Errorf("unknown operand: %v", inst.operand)
 	}
