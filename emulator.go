@@ -275,12 +275,30 @@ func decodeInstWithScanner(sc *bufio.Scanner) (interface{}, error) {
 	return inst, nil
 }
 
+// for int 21
+type intHandler func(state) error
+type intHandlers map[uint8]intHandler
+
 type state struct {
 	ax, cx, ss, sp, cs, ip word
+	intHandlers intHandlers
 }
 
-func newState(ss, sp, cs, ip word) state {
-	return state{}
+func newState(ss, sp, cs, ip word, customIntHandlers intHandlers) state {
+	intHandlers := make(intHandlers)
+	for k, v := range customIntHandlers {
+		intHandlers[k] = v
+	}
+
+	// int 21 4c
+	if _, ok := intHandlers[0x4c]; !ok {
+		intHandlers[0x4c] = func(s state) error {
+			os.Exit(int(s.al()))
+			return nil
+		}
+	}
+
+	return state{intHandlers: intHandlers}
 }
 
 func (s state) al() uint8 {
@@ -330,8 +348,11 @@ func execAdd(inst instAdd, state state) (state, error) {
 func execInt(inst instInt, state state) (state, error) {
 	switch inst.operand {
 	case 0x21:
-		if state.ah() == 0x4c {
-			os.Exit(int(state.al()))
+		if handler, ok := state.intHandlers[state.ah()]; ok {
+			err := handler(state)
+			if err != nil {
+				return state, err
+			}
 		} else {
 			return state, fmt.Errorf("int 21 with unknown value of ax: %04x", state.ax)
 		}
@@ -356,7 +377,7 @@ func execute(shouldBeInst interface{}, state state) (state, error) {
 	}
 }
 
-func RunExe(reader io.Reader) (state, error) {
+func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (state, error) {
 	sc := bufio.NewScanner(reader)
 	sc.Split(bufio.ScanBytes)
 	header, err := parseHeaderWithScanner(sc)
@@ -364,7 +385,7 @@ func RunExe(reader io.Reader) (state, error) {
 		return state{}, err
 	}
 
-	s := newState(header.exInitSS, header.exInitSP, header.exInitCS, header.exInitIP)
+	s := newState(header.exInitSS, header.exInitSP, header.exInitCS, header.exInitIP, intHandlers)
 
 	for {
 		inst, err := decodeInstWithScanner(sc)
@@ -383,4 +404,8 @@ func RunExe(reader io.Reader) (state, error) {
 	}
 
 	return s, nil
+}
+
+func RunExe(reader io.Reader) (state, error) {
+	return runExeWithCustomIntHandlers(reader, make(intHandlers))
 }

@@ -230,3 +230,37 @@ func TestAddExe(t *testing.T) {
 		t.Errorf("register ax is expected to be 0x%04x but actual 0x%04x", 0x0003, actual.ax)
 	}
 }
+
+func TestInt21_4c(t *testing.T) {
+	// exit status 1
+	b := rawHeader()
+	b = append(b, []byte{0xb8, 0x4c, 0x00}...) // mov ax,4ch
+	b = append(b, []byte{0xc1, 0xe0, 0x08}...) // shl ax,8
+	b = append(b, []byte{0x83, 0xc0, 0x01}...) // add ax,01h
+	b = append(b, []byte{0xcd, 0x21}...)       // int 21h
+
+	var exitCode uint8;
+	intHandlers := make(intHandlers)
+	intHandlers[0x4c] = func(s state) error {
+		exitCode = s.al()
+		return nil
+	}
+
+	actual, err := runExeWithCustomIntHandlers(bytes.NewReader(b), intHandlers)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if actual.ax != 0x4c01 {
+		t.Errorf("ax is illegal: %04x", actual.ax)
+	}
+	if actual.al() != 0x01 {
+		t.Errorf("al is illegal: %02x", actual.al())
+	}
+	if actual.ah() != 0x4c {
+		t.Errorf("ah is illegal: %02x", actual.ah())
+	}
+	if exitCode != 0x01 {
+		t.Errorf("exitCode is expected to be %02x but %02x", 0x01, exitCode)
+	}
+}
