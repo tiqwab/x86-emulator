@@ -288,7 +288,7 @@ func (s state) al() uint8 {
 }
 
 func (s state) ah() uint8 {
-	return uint8(s.ax >> 4)
+	return uint8(s.ax >> 8)
 }
 
 func execMov(inst instMov, state state) (state, error) {
