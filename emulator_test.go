@@ -24,7 +24,7 @@ func TestParseHeaderSignature(t *testing.T) {
 	var reader io.Reader = bytes.NewReader(rawHeader())
 	actual, err := parseHeader(reader)
 	if err != nil {
-		t.Error(err)
+		t.Errorf("%+v", err)
 	}
 	expected := [2]byte{'M', 'Z'}
 	if actual.exSignature != expected {
@@ -36,7 +36,7 @@ func TestParseHeaderSize(t *testing.T) {
 	var reader io.Reader = bytes.NewReader(rawHeader())
 	actual, err := parseHeader(reader)
 	if err != nil {
-		t.Error(err)
+		t.Errorf("%+v", err)
 	}
 	expected := word(2)
 	if actual.exHeaderSize != expected {
@@ -48,7 +48,7 @@ func TestParseHeaderInitSS(t *testing.T) {
 	var reader io.Reader = bytes.NewReader(rawHeader())
 	actual, err := parseHeader(reader)
 	if err != nil {
-		t.Error(err)
+		t.Errorf("%+v", err)
 	}
 	expected := word(0x0001)
 	if actual.exInitSS != expected {
@@ -60,7 +60,7 @@ func TestParseHeaderInitSP(t *testing.T) {
 	var reader io.Reader = bytes.NewReader(rawHeader())
 	actual, err := parseHeader(reader)
 	if err != nil {
-		t.Error(err)
+		t.Errorf("%+v", err)
 	}
 	expected := word(0x1000)
 	if actual.exInitSP != expected {
@@ -72,7 +72,7 @@ func TestParseHeaderInitIP(t *testing.T) {
 	var reader io.Reader = bytes.NewReader(rawHeader())
 	actual, err := parseHeader(reader)
 	if err != nil {
-		t.Error(err)
+		t.Errorf("%+v", err)
 	}
 	expected := word(0x0100)
 	if actual.exInitIP != expected {
@@ -84,7 +84,7 @@ func TestParseHeaderInitCS(t *testing.T) {
 	var reader io.Reader = bytes.NewReader(rawHeader())
 	actual, err := parseHeader(reader)
 	if err != nil {
-		t.Error(err)
+		t.Errorf("%+v", err)
 	}
 	expected := word(0x0002)
 	if actual.exInitCS != expected {
@@ -97,7 +97,7 @@ func TestDecodeInstInt(t *testing.T) {
 	var reader io.Reader = bytes.NewReader([]byte{0xcd, 0x21})
 	actual, err := decodeInst(reader)
 	if err != nil {
-		t.Error(err)
+		t.Errorf("%+v", err)
 	}
 	expected := instInt{operand: 0x21}
 	if actual != expected {
@@ -110,7 +110,7 @@ func TestDecodeMovAX(t *testing.T) {
 	var reader io.Reader = bytes.NewReader([]byte{0xb8, 0x01, 0x00})
 	actual, err := decodeInst(reader)
 	if err != nil {
-		t.Error(err)
+		t.Errorf("%+v", err)
 	}
 	expected := instMov{dest: AX, imm: 0x0001}
 	if actual != expected {
@@ -123,7 +123,7 @@ func TestDecodeMovCX(t *testing.T) {
 	var reader io.Reader = bytes.NewReader([]byte{0xb9, 0x01, 0x00})
 	actual, err := decodeInst(reader)
 	if err != nil {
-		t.Error(err)
+		t.Errorf("%+v", err)
 	}
 	expected := instMov{dest: CX, imm: 0x0001}
 	if actual != expected {
@@ -136,7 +136,7 @@ func TestDecodeShlAX(t *testing.T) {
 	var reader io.Reader = bytes.NewReader([]byte{0xc1, 0xe0, 0x01})
 	actual, err := decodeInst(reader)
 	if err != nil {
-		t.Error(err)
+		t.Errorf("%+v", err)
 	}
 	expected := instShl{register: AX, imm: 0x0001}
 	if actual != expected {
@@ -149,7 +149,7 @@ func TestDecodeShlCX(t *testing.T) {
 	var reader io.Reader = bytes.NewReader([]byte{0xc1, 0xe1, 0x01})
 	actual, err := decodeInst(reader)
 	if err != nil {
-		t.Error(err)
+		t.Errorf("%+v", err)
 	}
 	expected := instShl{register: CX, imm: 0x0001}
 	if actual != expected {
@@ -162,7 +162,7 @@ func TestDecodeAddAX(t *testing.T) {
 	var reader io.Reader = bytes.NewReader([]byte{0x83, 0xc0, 0x01})
 	actual, err := decodeInst(reader)
 	if err != nil {
-		t.Error(err)
+		t.Errorf("%+v", err)
 	}
 	expected := instAdd{dest: AX, imm: 0x0001}
 	if actual != expected {
@@ -175,7 +175,7 @@ func TestDecodeAddCX(t *testing.T) {
 	var reader io.Reader = bytes.NewReader([]byte{0x83, 0xc1, 0x01})
 	actual, err := decodeInst(reader)
 	if err != nil {
-		t.Error(err)
+		t.Errorf("%+v", err)
 	}
 	expected := instAdd{dest: CX, imm: 0x0001}
 	if actual != expected {
@@ -192,7 +192,7 @@ func (code machineCode) withMov() machineCode {
 func TestRunExe(t *testing.T) {
 	actual, err := RunExe(bytes.NewReader(rawHeader().withMov()))
 	if err != nil {
-		t.Error(err)
+		t.Errorf("%+v", err)
 	}
 	if actual.ax != 0x0001 {
 		t.Errorf("register ax is expected to be 0x%04x but actual 0x%04x", 0x0001, actual.ax)
@@ -208,7 +208,7 @@ func (code machineCode) withShl() machineCode {
 func TestShlExe(t *testing.T) {
 	actual, err := RunExe(bytes.NewReader(rawHeader().withMov().withShl()))
 	if err != nil {
-		t.Error(err)
+		t.Errorf("%+v", err)
 	}
 	if actual.ax != 0x0002 {
 		t.Errorf("register ax is expected to be 0x%04x but actual 0x%04x", 0x0002, actual.ax)
@@ -224,7 +224,7 @@ func (code machineCode) withAdd() machineCode {
 func TestAddExe(t *testing.T) {
 	actual, err := RunExe(bytes.NewReader(rawHeader().withAdd()))
 	if err != nil {
-		t.Error(err)
+		t.Errorf("%+v", err)
 	}
 	if actual.ax != 0x0003 {
 		t.Errorf("register ax is expected to be 0x%04x but actual 0x%04x", 0x0003, actual.ax)
@@ -248,7 +248,7 @@ func TestInt21_4c_ax(t *testing.T) {
 
 	actual, err := runExeWithCustomIntHandlers(bytes.NewReader(b), intHandlers)
 	if err != nil {
-		t.Error(err)
+		t.Errorf("%+v", err)
 	}
 
 	if actual.ax != 0x4c01 {
@@ -283,7 +283,7 @@ func TestInt21_4c_cx(t *testing.T) {
 
 	actual, err := runExeWithCustomIntHandlers(bytes.NewReader(b), intHandlers)
 	if err != nil {
-		t.Error(err)
+		t.Errorf("%+v", err)
 	}
 
 	if actual.ax != 0x4c01 {

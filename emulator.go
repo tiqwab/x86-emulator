@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"github.com/pkg/errors"
 )
 
 // ref1. https://en.wikibooks.org/wiki/X86_Assembly/Machine_Language_Conversion
@@ -42,53 +43,53 @@ func parseHeaderWithScanner(sc *bufio.Scanner) (*header, error) {
 
 	buf, err := parseBytes(2, sc)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to parse bytes at 0-1 of header")
 	}
 	exSignature := [2]byte{buf[0], buf[1]}
 
 	_, err = parseBytes(6, sc)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to parse bytes at 2-7 of header")
 	}
 
 	exHeaderSize, err := parseWord(sc)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to parse bytes at 8-9 of header")
 	}
 
 	_, err = parseBytes(4, sc)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to parse bytes at 10-13 of header")
 	}
 
 	exInitSS, err := parseWord(sc)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to parse bytes at 14-15 of header")
 	}
 
 	exInitSP, err := parseWord(sc)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to parse bytes at 16-17 of header")
 	}
 
 	_, err = parseBytes(2, sc)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to parse bytes at 18-19 of header")
 	}
 
 	exInitIP, err := parseWord(sc)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to parse bytes at 20-21 of header")
 	}
 
 	exInitCS, err := parseWord(sc)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to parse bytes at 22-23 of header")
 	}
 
 	_, err = parseBytes(8, sc)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to parse bytes at 24-31 of header")
 	}
 
 	return &header{
@@ -108,7 +109,7 @@ func parseBytes(n int, sc *bufio.Scanner) ([]byte, error) {
 			buf[i] = sc.Bytes()[0]
 		} else {
 			if err := sc.Err(); err != nil {
-				return nil, err
+				return nil, errors.Wrap(err, "failed to parse bytes")
 			} else {
 				return nil, io.EOF
 			}
@@ -120,7 +121,11 @@ func parseBytes(n int, sc *bufio.Scanner) ([]byte, error) {
 func parseByte(sc *bufio.Scanner) (byte, error) {
 	bs, err := parseBytes(1, sc)
 	if err != nil {
-		return 0, err
+		if err := sc.Err(); err != nil {
+			return 0, errors.Wrap(err, "failed to parse byte")
+		} else {
+			return 0, io.EOF
+		}
 	}
 	return bs[0], nil
 }
@@ -129,7 +134,7 @@ func parseByte(sc *bufio.Scanner) (byte, error) {
 func parseWord(sc *bufio.Scanner) (word, error) {
 	buf, err := parseBytes(2, sc)
 	if err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "failed to parse word")
 	}
 	return word(buf[1]) << 8 + word(buf[0]), nil
 }
@@ -167,7 +172,7 @@ func toRegisterW(x uint8) (registerW, error) {
 	case 7:
 		return DI, nil
 	}
-	return 0, fmt.Errorf("illegal number for registerW: %d", x)
+	return 0, errors.Errorf("illegal number for registerW: %d", x)
 }
 
 type instInt struct {
@@ -197,7 +202,7 @@ type instAdd struct {
 func decodeModRegRM(sc *bufio.Scanner) (byte, byte, registerW, error) {
 	buf, err := parseByte(sc)
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, 0, 0, errors.Wrap(err, "failed to parse byte")
 	}
 
 	mod := (buf & 0xc0) >> 6     // 0b11000000
@@ -218,7 +223,7 @@ func decodeInstWithScanner(sc *bufio.Scanner) (interface{}, error) {
 
 	rawOpcode, err := parseByte(sc)
 	if err != nil {
-		return inst, err
+		return inst, errors.Wrap(err, "failed to parse opcode")
 	}
 
 	switch rawOpcode {
@@ -226,17 +231,20 @@ func decodeInstWithScanner(sc *bufio.Scanner) (interface{}, error) {
 	case 0x83:
 		mod, reg, rm, err := decodeModRegRM(sc)
 		if err != nil {
-			return inst, err
+			return inst, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
 
 		if mod != 3 {
-			return nil, fmt.Errorf("expect mod is 0b11 but %02b", mod)
+			return nil, errors.Errorf("expect mod is 0b11 but %02b", mod)
 		}
 		if reg != 0 {
-			return nil, fmt.Errorf("expect reg is /0 but %d", reg)
+			return nil, errors.Errorf("expect reg is /0 but %d", reg)
 		}
 
 		imm, err := parseByte(sc)
+		if err != nil {
+			return inst, errors.Wrap(err, "failed to parse imm")
+		}
 
 		switch rm {
 		case AX:
@@ -244,7 +252,7 @@ func decodeInstWithScanner(sc *bufio.Scanner) (interface{}, error) {
 		case CX:
 			inst = instAdd{dest: CX, imm: imm}
 		default:
-			return nil, fmt.Errorf("unknown register: %d", rm)
+			return nil, errors.Errorf("unknown register: %d", rm)
 		}
 
 	// 8b /r (/r indicates that the ModR/M byte of the instruction contains a register operand and an r/m operand)
@@ -252,21 +260,21 @@ func decodeInstWithScanner(sc *bufio.Scanner) (interface{}, error) {
 	case 0x8b:
 		mod, reg, rm, err := decodeModRegRM(sc)
 		if err != nil {
-			return inst, err
+			return inst, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
 
 		if mod == 3 {
 			dest, err := toRegisterW(uint8(reg))
 			if err != nil {
-				return inst, fmt.Errorf("illegal reg value for registerW: %d", reg)
+				return inst, errors.Errorf("illegal reg value for registerW: %d", reg)
 			}
 			src, err := toRegisterW(uint8(rm))
 			if err != nil {
-				return inst, fmt.Errorf("illegal rm value for registerW: %d", rm)
+				return inst, errors.Errorf("illegal rm value for registerW: %d", rm)
 			}
 			inst = instMovRegReg{dest: dest, src: src}
 		} else {
-			return inst, fmt.Errorf("not yet implemented for mod 0x%02x", mod)
+			return inst, errors.Errorf("not yet implemented for mod 0x%02x", mod)
 		}
 
 	// mov r16,imm16
@@ -274,14 +282,14 @@ func decodeInstWithScanner(sc *bufio.Scanner) (interface{}, error) {
 		// ax
 		imm, err := parseWord(sc)
 		if err != nil {
-			return inst, err
+			return inst, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
 		inst = instMov{dest: AX, imm: imm}
 	case 0xb9:
 		// cx
 		imm, err := parseWord(sc)
 		if err != nil {
-			return inst, err
+			return inst, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
 		inst = instMov{dest: CX, imm: imm}
 
@@ -290,17 +298,20 @@ func decodeInstWithScanner(sc *bufio.Scanner) (interface{}, error) {
 	case 0xc1:
 		mod, reg, rm, err := decodeModRegRM(sc)
 		if err != nil {
-			return inst, err
+			return inst, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
 
 		if mod != 3 {
-			return nil, fmt.Errorf("expect mod is 0b11 but %02b", mod)
+			return nil, errors.Errorf("expect mod is 0b11 but %02b", mod)
 		}
 		if reg != 4 {
-			return nil, fmt.Errorf("expect reg is /4 but %d", reg)
+			return nil, errors.Errorf("expect reg is /4 but %d", reg)
 		}
 
 		imm, err := parseByte(sc)
+		if err != nil {
+			errors.Wrap(err, "failed to parse imm")
+		}
 
 		switch rm {
 		case AX:
@@ -308,18 +319,18 @@ func decodeInstWithScanner(sc *bufio.Scanner) (interface{}, error) {
 		case CX:
 			inst = instShl{register: CX, imm: imm}
 		default:
-			return nil, fmt.Errorf("unknown register: %d", rm)
+			return nil, errors.Errorf("unknown register: %d", rm)
 		}
 
 	// int imm8
 	case 0xcd:
 		operand, err := parseByte(sc)
 		if err != nil {
-			return inst, err
+			return inst, errors.Wrap(err, "failed to parse operand")
 		}
 		inst = instInt{operand: operand}
 	default:
-		return inst, fmt.Errorf("unknown opcode: 0x%02x", rawOpcode)
+		return inst, errors.Errorf("unknown opcode: 0x%02x", rawOpcode)
 	}
 	return inst, nil
 }
@@ -365,7 +376,7 @@ func (s state) reg(r registerW) (word, error) {
 	case CX:
 		return s.cx, nil
 	default:
-		return 0, fmt.Errorf("illegal registerW or not implemented: %d", r)
+		return 0, errors.Errorf("illegal registerW or not implemented: %d", r)
 	}
 }
 
@@ -376,7 +387,7 @@ func execMov(inst instMov, state state) (state, error) {
 	case CX:
 		state.cx = inst.imm
 	default:
-		return state, fmt.Errorf("unknown register: %v", inst.dest)
+		return state, errors.Errorf("unknown register: %v", inst.dest)
 	}
 	return state, nil
 }
@@ -386,17 +397,17 @@ func execMovRegReg(inst instMovRegReg, state state) (state, error) {
 	case AX:
 		v, err := state.reg(inst.src)
 		if err != nil {
-			return state, err
+			return state, errors.Wrap(err, "failed to get reg")
 		}
 		state.ax = v
 	case CX:
 		v, err := state.reg(inst.src)
 		if err != nil {
-			return state, err
+			return state, errors.Wrap(err, "failed to get reg")
 		}
 		state.cx = v
 	default:
-		return state, fmt.Errorf("unknown register: %v", inst.dest)
+		return state, errors.Errorf("unknown register: %v", inst.dest)
 	}
 	return state, nil
 }
@@ -408,7 +419,7 @@ func execShl(inst instShl, state state) (state, error) {
 	case CX:
 		state.cx <<= inst.imm
 	default:
-		return state, fmt.Errorf("unknown register: %v", inst.register)
+		return state, errors.Errorf("unknown register: %v", inst.register)
 	}
 	return state, nil
 }
@@ -420,7 +431,7 @@ func execAdd(inst instAdd, state state) (state, error) {
 	case CX:
 		state.cx += word(inst.imm)
 	default:
-		return state, fmt.Errorf("unknown register: %v", inst.dest)
+		return state, errors.Errorf("unknown register: %v", inst.dest)
 	}
 	return state, nil
 }
@@ -431,13 +442,13 @@ func execInt(inst instInt, state state) (state, error) {
 		if handler, ok := state.intHandlers[state.ah()]; ok {
 			err := handler(state)
 			if err != nil {
-				return state, err
+				return state, errors.Wrap(err, "failed in handler")
 			}
 		} else {
-			return state, fmt.Errorf("int 21 with unknown value of ax: %04x", state.ax)
+			return state, errors.Errorf("int 21 with unknown value of ax: %04x", state.ax)
 		}
 	default:
-		return state, fmt.Errorf("unknown operand: %v", inst.operand)
+		return state, errors.Errorf("unknown operand: %v", inst.operand)
 	}
 	return state, nil
 }
@@ -455,7 +466,7 @@ func execute(shouldBeInst interface{}, state state) (state, error) {
 	case instInt:
 		return execInt(inst, state)
 	default:
-		return state, fmt.Errorf("unknown inst: %T", shouldBeInst)
+		return state, errors.Errorf("unknown inst: %T", shouldBeInst)
 	}
 }
 
@@ -464,7 +475,7 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 	sc.Split(bufio.ScanBytes)
 	header, err := parseHeaderWithScanner(sc)
 	if err != nil {
-		return state{}, err
+		return state{}, errors.Wrap(err, "error to parse header")
 	}
 
 	s := newState(header.exInitSS, header.exInitSP, header.exInitCS, header.exInitIP, intHandlers)
@@ -472,16 +483,16 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 	for {
 		inst, err := decodeInstWithScanner(sc)
 		if err != nil {
-			if err == io.EOF {
+			if errors.Cause(err) == io.EOF {
 				break
 			} else {
-				return state{}, err
+				return state{}, errors.Wrap(err, "error to decode inst")
 			}
 		}
 
 		s, err = execute(inst, s)
 		if err != nil {
-			return state{}, err
+			return state{}, errors.Wrap(err, "errors to execute")
 		}
 	}
 
