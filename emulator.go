@@ -18,6 +18,59 @@ type exe struct {
 	header header
 }
 
+// --- parser
+
+type parser struct {
+	sc *bufio.Scanner
+}
+
+func newParser(reader io.Reader) *parser {
+	sc := bufio.NewScanner(reader)
+	sc.Split(bufio.ScanBytes)
+	return &parser{
+		sc: sc,
+	}
+}
+
+func (parser *parser) parseBytes(n int) ([]byte, error) {
+	buf := make([]byte, n)
+	for i := 0; i < n; i++ {
+		if b := parser.sc.Scan(); b {
+			buf[i] = parser.sc.Bytes()[0]
+		} else {
+			if err := parser.sc.Err(); err != nil {
+				return nil, errors.Wrap(err, "failed to parse bytes")
+			} else {
+				return nil, io.EOF
+			}
+		}
+	}
+	return buf, nil
+}
+
+func (parser *parser) parseByte() (byte, error) {
+	bs, err := parser.parseBytes(1)
+	if err != nil {
+		if err := parser.sc.Err(); err != nil {
+			return 0, errors.Wrap(err, "failed to parse byte")
+		} else {
+			return 0, io.EOF
+		}
+	}
+	return bs[0], nil
+}
+
+// assume little-endian
+func (parser *parser) parseWord() (word, error) {
+	buf, err := parser.parseBytes(2)
+	if err != nil {
+		return 0, errors.Wrap(err, "failed to parse word")
+	}
+	return word(buf[1]) << 8 + word(buf[0]), nil
+}
+
+// --- header
+
 type header struct {
 	exSignature [2]byte
 	relocationItems word
@@ -35,71 +88,70 @@ func (h header) String() string {
 }
 
 func parseHeader(reader io.Reader) (*header, error) {
-	sc := bufio.NewScanner(reader)
-	sc.Split(bufio.ScanBytes)
-	return parseHeaderWithScanner(sc)
+	parser := newParser(reader)
+	return parseHeaderWithParser(parser)
 }
 
-func parseHeaderWithScanner(sc *bufio.Scanner) (*header, error) {
+func parseHeaderWithParser(parser *parser) (*header, error) {
 	var buf []byte
 
-	buf, err := parseBytes(2, sc)
+	buf, err := parser.parseBytes(2)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse bytes at 0-1 of header")
 	}
 	exSignature := [2]byte{buf[0], buf[1]}
 
-	_, err = parseBytes(4, sc)
+	_, err = parser.parseBytes(4)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse bytes at 2-5 of header")
 	}
 
-	relocationItems, err := parseWord(sc)
+	relocationItems, err := parser.parseWord()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse bytes at 6-7 of header")
 	}
 
-	exHeaderSize, err := parseWord(sc)
+	exHeaderSize, err := parser.parseWord()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse bytes at 8-9 of header")
 	}
 
-	_, err = parseBytes(4, sc)
+	_, err = parser.parseBytes(4)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse bytes at 10-13 of header")
 	}
 
-	exInitSS, err := parseWord(sc)
+	exInitSS, err := parser.parseWord()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse bytes at 14-15 of header")
 	}
 
-	exInitSP, err := parseWord(sc)
+	exInitSP, err := parser.parseWord()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse bytes at 16-17 of header")
 	}
 
-	_, err = parseBytes(2, sc)
+	_, err = parser.parseBytes(2)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse bytes at 18-19 of header")
 	}
 
-	exInitIP, err := parseWord(sc)
+	exInitIP, err := parser.parseWord()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse bytes at 20-21 of header")
 	}
 
-	exInitCS, err := parseWord(sc)
+	exInitCS, err := parser.parseWord()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse bytes at 22-23 of header")
 	}
 
-	relocationTableOffset, err := parseWord(sc)
+	relocationTableOffset, err := parser.parseWord()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse bytes at 24-25 of header")
 	}
 
-	_, err = parseBytes(6, sc)
+	_, err = parser.parseBytes(6)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse bytes at 24-31 of header")
 	}
@@ -114,43 +166,6 @@ func parseHeaderWithScanner(sc *bufio.Scanner) (*header, error) {
 		exInitCS: exInitCS,
 		relocationTableOffset: relocationTableOffset,
 	}, nil
-}
-
-func parseBytes(n int, sc *bufio.Scanner) ([]byte, error) {
-	buf := make([]byte, n)
-	for i := 0; i < n; i++ {
-		if b := sc.Scan(); b {
-			buf[i] = sc.Bytes()[0]
-		} else {
-			if err := sc.Err(); err != nil {
-				return nil, errors.Wrap(err, "failed to parse bytes")
-			} else {
-				return nil, io.EOF
-			}
-		}
-	}
-	return buf, nil
-}
-
-func parseByte(sc *bufio.Scanner) (byte, error) {
-	bs, err := parseBytes(1, sc)
-	if err != nil {
-		if err := sc.Err(); err != nil {
-			return 0, errors.Wrap(err, "failed to parse byte")
-		} else {
-			return 0, io.EOF
-		}
-	}
-	return bs[0], nil
-}
-
-// assume little-endian
-func parseWord(sc *bufio.Scanner) (word, error) {
-	buf, err := parseBytes(2, sc)
-	if err != nil {
-		return 0, errors.Wrap(err, "failed to parse word")
-	}
-	return word(buf[1]) << 8 + word(buf[0]), nil
 }
 
 type registerW uint8
@@ -213,8 +228,8 @@ type instAdd struct {
 	imm uint8
 }
 
-func decodeModRegRM(sc *bufio.Scanner) (byte, byte, registerW, error) {
-	buf, err := parseByte(sc)
+func decodeModRegRM(parser *parser) (byte, byte, registerW, error) {
+	buf, err := parser.parseByte()
 	if err != nil {
 		return 0, 0, 0, errors.Wrap(err, "failed to parse byte")
 	}
@@ -227,15 +242,14 @@ func decodeModRegRM(sc *bufio.Scanner) (byte, byte, registerW, error) {
 }
 
 func decodeInst(reader io.Reader) (interface{}, error) {
-	sc := bufio.NewScanner(reader)
-	sc.Split(bufio.ScanBytes)
-	return decodeInstWithScanner(sc)
+	parser := newParser(reader)
+	return decodeInstWithParser(parser)
 }
 
-func decodeInstWithScanner(sc *bufio.Scanner) (interface{}, error) {
+func decodeInstWithParser(parser *parser) (interface{}, error) {
 	var inst interface{}
 
-	rawOpcode, err := parseByte(sc)
+	rawOpcode, err := parser.parseByte()
 	if err != nil {
 		return inst, errors.Wrap(err, "failed to parse opcode")
 	}
@@ -243,7 +257,7 @@ func decodeInstWithScanner(sc *bufio.Scanner) (interface{}, error) {
 	switch rawOpcode {
 	// add r/m16, imm8
 	case 0x83:
-		mod, reg, rm, err := decodeModRegRM(sc)
+		mod, reg, rm, err := decodeModRegRM(parser)
 		if err != nil {
 			return inst, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -255,7 +269,7 @@ func decodeInstWithScanner(sc *bufio.Scanner) (interface{}, error) {
 			return nil, errors.Errorf("expect reg is /0 but %d", reg)
 		}
 
-		imm, err := parseByte(sc)
+		imm, err := parser.parseByte()
 		if err != nil {
 			return inst, errors.Wrap(err, "failed to parse imm")
 		}
@@ -272,7 +286,7 @@ func decodeInstWithScanner(sc *bufio.Scanner) (interface{}, error) {
 	// 8b /r (/r indicates that the ModR/M byte of the instruction contains a register operand and an r/m operand)
 	// mov r16,r/m16
 	case 0x8b:
-		mod, reg, rm, err := decodeModRegRM(sc)
+		mod, reg, rm, err := decodeModRegRM(parser)
 		if err != nil {
 			return inst, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -294,14 +308,14 @@ func decodeInstWithScanner(sc *bufio.Scanner) (interface{}, error) {
 	// mov r16,imm16
 	case 0xb8:
 		// ax
-		imm, err := parseWord(sc)
+		imm, err := parser.parseWord()
 		if err != nil {
 			return inst, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
 		inst = instMov{dest: AX, imm: imm}
 	case 0xb9:
 		// cx
-		imm, err := parseWord(sc)
+		imm, err := parser.parseWord()
 		if err != nil {
 			return inst, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -310,7 +324,7 @@ func decodeInstWithScanner(sc *bufio.Scanner) (interface{}, error) {
 	// shl r/m16,imm8
 	// FIXME: handle memory address as source
 	case 0xc1:
-		mod, reg, rm, err := decodeModRegRM(sc)
+		mod, reg, rm, err := decodeModRegRM(parser)
 		if err != nil {
 			return inst, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -322,7 +336,7 @@ func decodeInstWithScanner(sc *bufio.Scanner) (interface{}, error) {
 			return nil, errors.Errorf("expect reg is /4 but %d", reg)
 		}
 
-		imm, err := parseByte(sc)
+		imm, err := parser.parseByte()
 		if err != nil {
 			errors.Wrap(err, "failed to parse imm")
 		}
@@ -338,7 +352,7 @@ func decodeInstWithScanner(sc *bufio.Scanner) (interface{}, error) {
 
 	// int imm8
 	case 0xcd:
-		operand, err := parseByte(sc)
+		operand, err := parser.parseByte()
 		if err != nil {
 			return inst, errors.Wrap(err, "failed to parse operand")
 		}
@@ -485,9 +499,8 @@ func execute(shouldBeInst interface{}, state state) (state, error) {
 }
 
 func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (state, error) {
-	sc := bufio.NewScanner(reader)
-	sc.Split(bufio.ScanBytes)
-	header, err := parseHeaderWithScanner(sc)
+	parser := newParser(reader)
+	header, err := parseHeaderWithParser(parser)
 	if err != nil {
 		return state{}, errors.Wrap(err, "error to parse header")
 	}
@@ -495,7 +508,7 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 	s := newState(header.exInitSS, header.exInitSP, header.exInitCS, header.exInitIP, intHandlers)
 
 	for {
-		inst, err := decodeInstWithScanner(sc)
+		inst, err := decodeInstWithParser(parser)
 		if err != nil {
 			if errors.Cause(err) == io.EOF {
 				break
