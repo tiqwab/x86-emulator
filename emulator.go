@@ -177,9 +177,10 @@ func parseHeaderWithParser(parser *parser) (*header, error) {
 }
 
 type registerW uint8
+type registerS uint8
 
-// ref2. 3.1.1.1
 const (
+	// ref2. 3.1.1.1
 	AX = registerW(0)
 	CX = registerW(1)
 	DX = registerW(2)
@@ -188,6 +189,12 @@ const (
 	BP = registerW(5)
 	SI = registerW(6)
 	DI = registerW(7)
+	ES = registerS(0)
+	CS = registerS(1)
+	SS = registerS(2)
+	DS = registerS(3)
+	FS = registerS(4)
+	GS = registerS(5)
 )
 
 func toRegisterW(x uint8) (registerW, error) {
@@ -208,8 +215,28 @@ func toRegisterW(x uint8) (registerW, error) {
 		return SI, nil
 	case 7:
 		return DI, nil
+	default:
+		return 0, errors.Errorf("illegal number for registerW: %d", x)
 	}
-	return 0, errors.Errorf("illegal number for registerW: %d", x)
+}
+
+func toRegisterS(x uint8) (registerS, error) {
+	switch x {
+	case 0:
+		return ES, nil
+	case 1:
+		return CS, nil
+	case 2:
+		return SS, nil
+	case 3:
+		return DS, nil
+	case 4:
+		return FS, nil
+	case 5:
+		return GS, nil
+	default:
+		return 0, errors.Errorf("illegal number for registerS:%d", x)
+	}
 }
 
 type instInt struct {
@@ -223,6 +250,11 @@ type instMov struct {
 
 type instMovRegReg struct {
 	dest registerW
+	src registerW
+}
+
+type instMovSRegReg struct {
+	dest registerS
 	src registerW
 }
 
@@ -309,6 +341,29 @@ func decodeInstWithParser(parser *parser) (interface{}, error) {
 				return inst, errors.Errorf("illegal rm value for registerW: %d", rm)
 			}
 			inst = instMovRegReg{dest: dest, src: src}
+		} else {
+			return inst, errors.Errorf("not yet implemented for mod 0x%02x", mod)
+		}
+
+	// 8e /r
+	// mov Sreg,r/m16
+	// Sreg ES=0, CS=1, SS=2, DS=3, FS=4, GS=5
+	case 0x8e:
+		mod, reg, rm, err := decodeModRegRM(parser)
+		if err != nil {
+			return inst, errors.Wrap(err, "failed to decode mod/reg/rm")
+		}
+
+		if mod == 3 {
+			dest, err := toRegisterS(reg)
+			if err != nil {
+				return inst, errors.Errorf("illegal reg value for registerS: %d", reg)
+			}
+			src, err := toRegisterW(uint8(rm))
+			if err != nil {
+				return inst, errors.Errorf("illegal reg value for registerW: %d", rm)
+			}
+			inst = instMovSRegReg{dest: dest, src: src}
 		} else {
 			return inst, errors.Errorf("not yet implemented for mod 0x%02x", mod)
 		}
