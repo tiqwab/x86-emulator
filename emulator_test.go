@@ -115,6 +115,19 @@ func TestParseHeaderRelocationItems(t *testing.T) {
 	}
 }
 
+func TestParseHeaderRelocationOffset(t *testing.T) {
+	var reader io.Reader = bytes.NewReader(rawHeaderWithRelocation())
+	actual, err := parseHeader(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := word(0x0020)
+	if actual.relocationTableOffset != expected {
+		t.Errorf("expected %v but actual %v", expected, actual.relocationTableOffset)
+	}
+}
+
+// decode
 
 func TestDecodeInstInt(t *testing.T) {
 	// int 21

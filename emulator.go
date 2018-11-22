@@ -26,6 +26,7 @@ type header struct {
 	exInitSP word
 	exInitIP word
 	exInitCS word
+	relocationTableOffset word
 }
 
 func (h header) String() string {
@@ -93,7 +94,12 @@ func parseHeaderWithScanner(sc *bufio.Scanner) (*header, error) {
 		return nil, errors.Wrap(err, "failed to parse bytes at 22-23 of header")
 	}
 
-	_, err = parseBytes(8, sc)
+	relocationTableOffset, err := parseWord(sc)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to parse bytes at 24-25 of header")
+	}
+
+	_, err = parseBytes(6, sc)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse bytes at 24-31 of header")
 	}
@@ -106,6 +112,7 @@ func parseHeaderWithScanner(sc *bufio.Scanner) (*header, error) {
 		exInitSP: exInitSP,
 		exInitIP: exInitIP,
 		exInitCS: exInitCS,
+		relocationTableOffset: relocationTableOffset,
 	}, nil
 }
 
