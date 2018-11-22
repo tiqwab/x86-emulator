@@ -20,6 +20,7 @@ type exe struct {
 
 type header struct {
 	exSignature [2]byte
+	relocationItems word
 	exHeaderSize word
 	exInitSS word
 	exInitSP word
@@ -47,9 +48,14 @@ func parseHeaderWithScanner(sc *bufio.Scanner) (*header, error) {
 	}
 	exSignature := [2]byte{buf[0], buf[1]}
 
-	_, err = parseBytes(6, sc)
+	_, err = parseBytes(4, sc)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse bytes at 2-7 of header")
+		return nil, errors.Wrap(err, "failed to parse bytes at 2-5 of header")
+	}
+
+	relocationItems, err := parseWord(sc)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to parse bytes at 6-7 of header")
 	}
 
 	exHeaderSize, err := parseWord(sc)
@@ -94,6 +100,7 @@ func parseHeaderWithScanner(sc *bufio.Scanner) (*header, error) {
 
 	return &header{
 		exSignature: exSignature,
+		relocationItems: relocationItems,
 		exHeaderSize: exHeaderSize,
 		exInitSS: exInitSS,
 		exInitSP: exInitSP,
