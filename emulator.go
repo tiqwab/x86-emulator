@@ -11,6 +11,10 @@ import (
 // ref1. https://en.wikibooks.org/wiki/X86_Assembly/Machine_Language_Conversion
 // ref2. https://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-instruction-set-reference-manual-325383.pdf
 
+const (
+	paragraphSize int = 16
+)
+
 type word uint16
 
 type exe struct {
@@ -22,6 +26,7 @@ type exe struct {
 
 type parser struct {
 	sc *bufio.Scanner
+	offset int
 }
 
 func newParser(reader io.Reader) *parser {
@@ -29,6 +34,7 @@ func newParser(reader io.Reader) *parser {
 	sc.Split(bufio.ScanBytes)
 	return &parser{
 		sc: sc,
+		offset: 0,
 	}
 }
 
@@ -37,6 +43,7 @@ func (parser *parser) parseBytes(n int) ([]byte, error) {
 	for i := 0; i < n; i++ {
 		if b := parser.sc.Scan(); b {
 			buf[i] = parser.sc.Bytes()[0]
+			parser.offset++
 		} else {
 			if err := parser.sc.Err(); err != nil {
 				return nil, errors.Wrap(err, "failed to parse bytes")
@@ -151,7 +158,8 @@ func parseHeaderWithParser(parser *parser) (*header, error) {
 		return nil, errors.Wrap(err, "failed to parse bytes at 24-25 of header")
 	}
 
-	_, err = parser.parseBytes(6)
+	remainHeaderBytes := int(exHeaderSize) * paragraphSize - int(parser.offset)
+	_, err = parser.parseBytes(remainHeaderBytes)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse bytes at 24-31 of header")
 	}
