@@ -177,6 +177,7 @@ func parseHeaderWithParser(parser *parser) (*header, error) {
 }
 
 type registerW uint8
+type registerB uint8
 type registerS uint8
 
 const (
@@ -189,6 +190,14 @@ const (
 	BP = registerW(5)
 	SI = registerW(6)
 	DI = registerW(7)
+	AL = registerB(0)
+	CL = registerB(1)
+	DL = registerB(2)
+	BL = registerB(3)
+	AH = registerB(4)
+	CH = registerB(5)
+	DH = registerB(6)
+	BH = registerB(7)
 	ES = registerS(0)
 	CS = registerS(1)
 	SS = registerS(2)
@@ -220,6 +229,29 @@ func toRegisterW(x uint8) (registerW, error) {
 	}
 }
 
+func toRegisterB(x uint8) (registerB, error) {
+	switch x {
+	case 0:
+		return AL, nil
+	case 1:
+		return CL, nil
+	case 2:
+		return DL, nil
+	case 3:
+		return BL, nil
+	case 4:
+		return AH, nil
+	case 5:
+		return CH, nil
+	case 6:
+		return DH, nil
+	case 7:
+		return BH, nil
+	default:
+		return 0, errors.Errorf("illegal number for registerW: %d", x)
+	}
+}
+
 func toRegisterS(x uint8) (registerS, error) {
 	switch x {
 	case 0:
@@ -246,6 +278,11 @@ type instInt struct {
 type instMov struct {
 	dest registerW
 	imm word
+}
+
+type instMovB struct {
+	dest registerB
+	imm uint8
 }
 
 type instMovRegReg struct {
@@ -368,19 +405,30 @@ func decodeInstWithParser(parser *parser) (interface{}, error) {
 			return inst, errors.Errorf("not yet implemented for mod 0x%02x", mod)
 		}
 
+	// b0+ rb ib
+	// mov r8,imm8
+	case 0xb4:
+		// ah
+		imm, err := parser.parseByte()
+		if err != nil {
+			return inst, errors.Wrap(err, "failed to decode imm")
+		}
+		inst = instMovB{dest: AH, imm: imm}
+
+	// b8+ rw iw
 	// mov r16,imm16
 	case 0xb8:
 		// ax
 		imm, err := parser.parseWord()
 		if err != nil {
-			return inst, errors.Wrap(err, "failed to decode mod/reg/rm")
+			return inst, errors.Wrap(err, "failed to decode imm")
 		}
 		inst = instMov{dest: AX, imm: imm}
 	case 0xb9:
 		// cx
 		imm, err := parser.parseWord()
 		if err != nil {
-			return inst, errors.Wrap(err, "failed to decode mod/reg/rm")
+			return inst, errors.Wrap(err, "failed to decode imm")
 		}
 		inst = instMov{dest: CX, imm: imm}
 

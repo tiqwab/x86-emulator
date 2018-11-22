@@ -233,6 +233,19 @@ func TestDecodeMovDs(t *testing.T) {
 	}
 }
 
+func TestDecodeMovAh(t *testing.T) {
+	// mov ah,09h
+	var reader io.Reader = bytes.NewReader([]byte{0xb4, 0x09})
+	actual, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instMovB{dest: AH, imm: 0x09}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 // run
 
 func (code machineCode) withMov() machineCode {
