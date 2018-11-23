@@ -246,6 +246,19 @@ func TestDecodeMovAh(t *testing.T) {
 	}
 }
 
+func TestDecodeLeaDx(t *testing.T) {
+	// lea dx,msg
+	var reader io.Reader = bytes.NewReader([]byte{0x8d, 0x16, 0x02, 0x00}) // 0b00010110
+	actual, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instLea{dest: DX, address: 0x0002}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 // run
 
 func (code machineCode) withMov() machineCode {

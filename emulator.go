@@ -305,6 +305,11 @@ type instAdd struct {
 	imm uint8
 }
 
+type instLea struct {
+	dest registerW
+	address word
+}
+
 func decodeModRegRM(parser *parser) (byte, byte, registerW, error) {
 	buf, err := parser.parseByte()
 	if err != nil {
@@ -380,6 +385,28 @@ func decodeInstWithParser(parser *parser) (interface{}, error) {
 			inst = instMovRegReg{dest: dest, src: src}
 		} else {
 			return inst, errors.Errorf("not yet implemented for mod 0x%02x", mod)
+		}
+
+	// 8d /r
+	// lea r16,m
+	case 0x8d:
+		mod, reg, rm, err := decodeModRegRM(parser)
+		if err != nil {
+			return inst, errors.Wrap(err, "failed to decode mod/reg/rm")
+		}
+
+		if mod == 0 && rm == 6 {
+			dest, err := toRegisterW(reg)
+			if err != nil {
+				return inst, errors.Wrap(err, "illegal reg value for registerW")
+			}
+			address, err := parser.parseWord()
+			if err != nil {
+				return inst, errors.Wrap(err, "failed to parse address of lea")
+			}
+			inst = instLea{dest: dest, address: address}
+		} else {
+			return inst, errors.Errorf("mod and rm should be 0 and 3 respectively for lea? mod=%d, rm=%d actually", mod, rm)
 		}
 
 	// 8e /r
