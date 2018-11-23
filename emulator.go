@@ -506,7 +506,7 @@ type intHandler func(state) error
 type intHandlers map[uint8]intHandler
 
 type state struct {
-	ax, cx, ss, sp, cs, ip word
+	ax, cx, ss, sp, cs, ip, ds word
 	intHandlers intHandlers
 }
 
@@ -516,10 +516,19 @@ func newState(ss, sp, cs, ip word, customIntHandlers intHandlers) state {
 		intHandlers[k] = v
 	}
 
-	// int 21 4c
+	// int 21 4ch
 	if _, ok := intHandlers[0x4c]; !ok {
 		intHandlers[0x4c] = func(s state) error {
 			os.Exit(int(s.al()))
+			return nil
+		}
+	}
+
+	// int 21 09h
+	if _, ok := intHandlers[0x09]; !ok {
+		intHandlers[0x09] = func(s state) error {
+			// TODO: implement
+			fmt.Println("should be implement print")
 			return nil
 		}
 	}
@@ -558,6 +567,16 @@ func execMov(inst instMov, state state) (state, error) {
 	return state, nil
 }
 
+func execMovB(inst instMovB, state state) (state, error) {
+	switch inst.dest {
+	case AH:
+		state.ax = word((uint16(inst.imm) << 8) + (0x0011) & uint16(state.ax))
+	default:
+		return state, errors.Errorf("unknown register: %v", inst.dest)
+	}
+	return state, nil
+}
+
 func execMovRegReg(inst instMovRegReg, state state) (state, error) {
 	switch inst.dest {
 	case AX:
@@ -572,6 +591,20 @@ func execMovRegReg(inst instMovRegReg, state state) (state, error) {
 			return state, errors.Wrap(err, "failed to get reg")
 		}
 		state.cx = v
+	default:
+		return state, errors.Errorf("unknown register: %v", inst.dest)
+	}
+	return state, nil
+}
+
+func execMovSRegReg(inst instMovSRegReg, state state) (state, error) {
+	switch inst.dest {
+	case DS:
+		v, err := state.reg(inst.src)
+		if err != nil {
+			return state, errors.Wrap(err, "failed to get reg")
+		}
+		state.ds = v
 	default:
 		return state, errors.Errorf("unknown register: %v", inst.dest)
 	}
@@ -602,6 +635,11 @@ func execAdd(inst instAdd, state state) (state, error) {
 	return state, nil
 }
 
+func execLea(inst instLea, state state) (state, error) {
+	// TODO: implement
+	return state, nil
+}
+
 func execInt(inst instInt, state state) (state, error) {
 	switch inst.operand {
 	case 0x21:
@@ -623,12 +661,18 @@ func execute(shouldBeInst interface{}, state state) (state, error) {
 	switch inst := shouldBeInst.(type) {
 	case instMov:
 		return execMov(inst, state)
+	case instMovB:
+		return execMovB(inst, state)
 	case instMovRegReg:
 		return execMovRegReg(inst, state)
+	case instMovSRegReg:
+		return execMovSRegReg(inst, state)
 	case instShl:
 		return execShl(inst, state)
 	case instAdd:
 		return execAdd(inst, state)
+	case instLea:
+		return execLea(inst, state)
 	case instInt:
 		return execInt(inst, state)
 	default:
