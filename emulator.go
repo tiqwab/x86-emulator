@@ -4,7 +4,6 @@ import (
 	"io"
 	"bufio"
 	"fmt"
-	"os"
 	"github.com/pkg/errors"
 )
 
@@ -16,6 +15,7 @@ const (
 )
 
 type word uint16
+type exitCode uint8
 
 type exe struct {
 	rawHeader []byte
@@ -502,12 +502,26 @@ func decodeInstWithParser(parser *parser) (interface{}, error) {
 }
 
 // for int 21
-type intHandler func(state) error
+type intHandler func(*state) error
 type intHandlers map[uint8]intHandler
+
+func intHandler4c(s *state) error {
+	s.exitCode = exitCode(s.al())
+	s.shouldExit = true
+	return nil
+}
+
+func intHandler09(s *state) error {
+	// TODO: implement
+	fmt.Println("should be implement print")
+	return nil
+}
 
 type state struct {
 	ax, cx, ss, sp, cs, ip, ds word
-	intHandlers intHandlers
+	exitCode                   exitCode
+	shouldExit                 bool
+	intHandlers                intHandlers
 }
 
 func newState(ss, sp, cs, ip word, customIntHandlers intHandlers) state {
@@ -518,18 +532,15 @@ func newState(ss, sp, cs, ip word, customIntHandlers intHandlers) state {
 
 	// int 21 4ch
 	if _, ok := intHandlers[0x4c]; !ok {
-		intHandlers[0x4c] = func(s state) error {
-			os.Exit(int(s.al()))
-			return nil
+		intHandlers[0x4c] = func(s *state) error {
+			return intHandler4c(s)
 		}
 	}
 
 	// int 21 09h
 	if _, ok := intHandlers[0x09]; !ok {
-		intHandlers[0x09] = func(s state) error {
-			// TODO: implement
-			fmt.Println("should be implement print")
-			return nil
+		intHandlers[0x09] = func(s *state) error {
+			return intHandler09(s)
 		}
 	}
 
@@ -644,7 +655,7 @@ func execInt(inst instInt, state state) (state, error) {
 	switch inst.operand {
 	case 0x21:
 		if handler, ok := state.intHandlers[state.ah()]; ok {
-			err := handler(state)
+			err := handler(&state)
 			if err != nil {
 				return state, errors.Wrap(err, "failed in handler")
 			}
@@ -703,11 +714,16 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		if err != nil {
 			return state{}, errors.Wrap(err, "errors to execute")
 		}
+		if s.shouldExit {
+			break
+		}
 	}
 
 	return s, nil
 }
 
-func RunExe(reader io.Reader) (state, error) {
-	return runExeWithCustomIntHandlers(reader, make(intHandlers))
+// (exit code, state, error)
+func RunExe(reader io.Reader) (uint8, state, error) {
+	state, err := runExeWithCustomIntHandlers(reader, make(intHandlers))
+	return uint8(state.exitCode), state, err
 }

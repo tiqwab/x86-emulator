@@ -4,6 +4,8 @@ import (
 	"testing"
 	"bytes"
 	"io"
+	"os"
+	"io/ioutil"
 	)
 
 type machineCode []byte
@@ -14,10 +16,6 @@ func rawHeader() machineCode {
 		0x4d, 0x5a, 0x2b, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x01, 0xff, 0xff, 0x01, 0x00,
 		0x00, 0x10, 0x00, 0x00, 0x00, 0x01, 0x02, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	}
-}
-
-func TestExample1(t *testing.T) {
-	t.Log("example1")
 }
 
 func TestParseHeaderSignature(t *testing.T) {
@@ -268,7 +266,7 @@ func (code machineCode) withMov() machineCode {
 }
 
 func TestRunExe(t *testing.T) {
-	actual, err := RunExe(bytes.NewReader(rawHeader().withMov()))
+	_, actual, err := RunExe(bytes.NewReader(rawHeader().withMov()))
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
@@ -284,7 +282,7 @@ func (code machineCode) withShl() machineCode {
 }
 
 func TestShlExe(t *testing.T) {
-	actual, err := RunExe(bytes.NewReader(rawHeader().withMov().withShl()))
+	_, actual, err := RunExe(bytes.NewReader(rawHeader().withMov().withShl()))
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
@@ -300,7 +298,7 @@ func (code machineCode) withAdd() machineCode {
 }
 
 func TestAddExe(t *testing.T) {
-	actual, err := RunExe(bytes.NewReader(rawHeader().withAdd()))
+	_, actual, err := RunExe(bytes.NewReader(rawHeader().withAdd()))
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
@@ -317,12 +315,7 @@ func TestInt21_4c_ax(t *testing.T) {
 	b = append(b, []byte{0x83, 0xc0, 0x01}...) // add ax,01h
 	b = append(b, []byte{0xcd, 0x21}...)       // int 21h
 
-	var exitCode uint8;
 	intHandlers := make(intHandlers)
-	intHandlers[0x4c] = func(s state) error {
-		exitCode = s.al()
-		return nil
-	}
 
 	actual, err := runExeWithCustomIntHandlers(bytes.NewReader(b), intHandlers)
 	if err != nil {
@@ -338,8 +331,8 @@ func TestInt21_4c_ax(t *testing.T) {
 	if actual.ah() != 0x4c {
 		t.Errorf("ah is illegal: %02x", actual.ah())
 	}
-	if exitCode != 0x01 {
-		t.Errorf("exitCode is expected to be %02x but %02x", 0x01, exitCode)
+	if actual.exitCode != 0x01 {
+		t.Errorf("exitCode is expected to be %02x but %02x", 0x01, actual.exitCode)
 	}
 }
 
@@ -352,12 +345,7 @@ func TestInt21_4c_cx(t *testing.T) {
 	b = append(b, []byte{0x8b, 0xc1}...)       // mov ax,cx
 	b = append(b, []byte{0xcd, 0x21}...)       // int 21h
 
-	var exitCode uint8;
 	intHandlers := make(intHandlers)
-	intHandlers[0x4c] = func(s state) error {
-		exitCode = s.al()
-		return nil
-	}
 
 	actual, err := runExeWithCustomIntHandlers(bytes.NewReader(b), intHandlers)
 	if err != nil {
@@ -373,8 +361,8 @@ func TestInt21_4c_cx(t *testing.T) {
 	if actual.ah() != 0x4c {
 		t.Errorf("ah is illegal: %02x", actual.ah())
 	}
-	if exitCode != 0x01 {
-		t.Errorf("exitCode is expected to be %02x but %02x", 0x01, exitCode)
+	if actual.exitCode != 0x01 {
+		t.Errorf("exitCode is expected to be %02x but %02x", 0x01, actual.exitCode)
 	}
 }
 
@@ -404,10 +392,35 @@ func TestInt21_09(t *testing.T) {
 	b = append(b, []byte{0xcd, 0x21}...) // int 21h
 	b = append(b, []byte("Hello world!$")...)
 
-	intHandlers := make(intHandlers)
-
-	_, err := runExeWithCustomIntHandlers(bytes.NewReader(b), intHandlers)
+	tempFile, err := ioutil.TempFile("", "TestInt21_09")
 	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	defer os.Remove(tempFile.Name())
+
+	intHandlers := make(intHandlers)
+	intHandlers[0x09] = func(s *state) error {
+		originalStdout := os.Stdout
+		os.Stdout = tempFile
+		intHandler09(s)
+		os.Stdout = originalStdout
+		return nil
+	}
+
+	_, err = runExeWithCustomIntHandlers(bytes.NewReader(b), intHandlers)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+
+	output, err := ioutil.ReadAll(tempFile)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	if string(output) != "Hello world!" {
+		t.Errorf("expect output %s but %s", "Hello world!", string(output))
+	}
+
+	if err = tempFile.Close(); err != nil {
 		t.Errorf("%+v", err)
 	}
 }
