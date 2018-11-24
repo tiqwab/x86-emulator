@@ -371,12 +371,12 @@ func TestInt21_09(t *testing.T) {
 	defer os.Remove(tempFile.Name())
 
 	intHandlers := make(intHandlers)
-	intHandlers[0x09] = func(s *state) error {
+	intHandlers[0x09] = func(s *state, m *memory) error {
 		originalStdout := os.Stdout
 		os.Stdout = tempFile
-		intHandler09(s)
+		err = intHandler09(s, m)
 		os.Stdout = originalStdout
-		return nil
+		return err
 	}
 
 	_, err = runExeWithCustomIntHandlers(bytes.NewReader(b), intHandlers)
@@ -384,12 +384,14 @@ func TestInt21_09(t *testing.T) {
 		t.Errorf("%+v", err)
 	}
 
+	tempFile.Sync()
+	tempFile.Seek(0, 0)
 	output, err := ioutil.ReadAll(tempFile)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
 	if string(output) != "Hello world!" {
-		t.Errorf("expect output %s but %s", "Hello world!", string(output))
+		t.Errorf("expect output \"%s\" but \"%s\"", "Hello world!", string(output))
 	}
 
 	if err = tempFile.Close(); err != nil {

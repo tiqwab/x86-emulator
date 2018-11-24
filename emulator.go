@@ -595,23 +595,38 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 }
 
 // for int 21
-type intHandler func(*state) error
+type intHandler func(*state, *memory) error
 type intHandlers map[uint8]intHandler
 
-func intHandler4c(s *state) error {
+func intHandler4c(s *state, memory *memory) error {
 	s.exitCode = exitCode(s.al())
 	s.shouldExit = true
 	return nil
 }
 
-func intHandler09(s *state) error {
-	// TODO: implement
-	fmt.Println("should be implement print")
+// DS:DX has the address of string
+// string should be ended with '$'
+func intHandler09(s *state, memory *memory) error {
+	var bs []byte
+	startAddress := s.realAddress(s.ds, s.dx)
+	for {
+		b, err := memory.readByte(startAddress)
+		if err != nil {
+			return err
+		}
+		if b == '$' {
+			break
+		}
+		bs = append(bs, b)
+		startAddress++
+	}
+	fmt.Print(string(bs))
 	return nil
 }
 
+// FIXME: Type general registers, segment registers respectively
 type state struct {
-	ax, cx, ss, sp, cs, ip, ds word
+	ax, cx, dx, ss, sp, cs, ip, ds word
 	exitCode                   exitCode
 	shouldExit                 bool
 	intHandlers                intHandlers
@@ -627,15 +642,15 @@ func newState(header *header, customIntHandlers intHandlers) state {
 
 	// int 21 4ch
 	if _, ok := intHandlers[0x4c]; !ok {
-		intHandlers[0x4c] = func(s *state) error {
-			return intHandler4c(s)
+		intHandlers[0x4c] = func(s *state, m *memory) error {
+			return intHandler4c(s, m)
 		}
 	}
 
 	// int 21 09h
 	if _, ok := intHandlers[0x09]; !ok {
-		intHandlers[0x09] = func(s *state) error {
-			return intHandler09(s)
+		intHandlers[0x09] = func(s *state, m *memory) error {
+			return intHandler09(s, m)
 		}
 	}
 
@@ -659,6 +674,10 @@ func (s state) reg(r registerW) (word, error) {
 	default:
 		return 0, errors.Errorf("illegal registerW or not implemented: %d", r)
 	}
+}
+
+func (s state) realAddress(sreg word, reg word) address {
+	return address(sreg) << 4 + address(reg)
 }
 
 func (s state) realIP() address {
@@ -746,15 +765,24 @@ func execAdd(inst instAdd, state state) (state, error) {
 }
 
 func execLea(inst instLea, state state) (state, error) {
-	// TODO: implement
+	switch inst.dest {
+	case AX:
+		state.ax = inst.address
+	case CX:
+		state.cx = inst.address
+	case DX:
+		state.dx = inst.address
+	default:
+		return state, errors.Errorf("unknown register: %v", inst.dest)
+	}
 	return state, nil
 }
 
-func execInt(inst instInt, state state) (state, error) {
+func execInt(inst instInt, state state, memory *memory) (state, error) {
 	switch inst.operand {
 	case 0x21:
 		if handler, ok := state.intHandlers[state.ah()]; ok {
-			err := handler(&state)
+			err := handler(&state, memory)
 			if err != nil {
 				return state, errors.Wrap(err, "failed in handler")
 			}
@@ -767,7 +795,7 @@ func execInt(inst instInt, state state) (state, error) {
 	return state, nil
 }
 
-func execute(shouldBeInst interface{}, state state) (state, error) {
+func execute(shouldBeInst interface{}, state state, memory *memory) (state, error) {
 	switch inst := shouldBeInst.(type) {
 	case instMov:
 		return execMov(inst, state)
@@ -784,7 +812,7 @@ func execute(shouldBeInst interface{}, state state) (state, error) {
 	case instLea:
 		return execLea(inst, state)
 	case instInt:
-		return execInt(inst, state)
+		return execInt(inst, state, memory)
 	default:
 		return state, errors.Errorf("unknown inst: %T", shouldBeInst)
 	}
@@ -811,7 +839,7 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 			}
 		}
 
-		s, err = execute(inst, s)
+		s, err = execute(inst, s, memory)
 		if err != nil {
 			return state{}, errors.Wrap(err, "errors to execute")
 		}
