@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"fmt"
 	"github.com/pkg/errors"
+	"io/ioutil"
 )
 
 // ref1. https://en.wikibooks.org/wiki/X86_Assembly/Machine_Language_Conversion
@@ -517,14 +518,19 @@ func intHandler09(s *state) error {
 	return nil
 }
 
+type memory []byte
+
 type state struct {
 	ax, cx, ss, sp, cs, ip, ds word
+	memory memory
 	exitCode                   exitCode
 	shouldExit                 bool
 	intHandlers                intHandlers
 }
 
-func newState(ss, sp, cs, ip word, customIntHandlers intHandlers) state {
+func newState(header *header, loadModule []byte, customIntHandlers intHandlers) state {
+	// --- Prepare interrupted handlers
+
 	intHandlers := make(intHandlers)
 	for k, v := range customIntHandlers {
 		intHandlers[k] = v
@@ -544,7 +550,14 @@ func newState(ss, sp, cs, ip word, customIntHandlers intHandlers) state {
 		}
 	}
 
-	return state{intHandlers: intHandlers}
+	// --- Prepare memory (assuming that cs=0)
+	loadModuleSize := len(loadModule)
+	memory := make(memory, loadModuleSize)
+	for i := 0; i < loadModuleSize; i++ {
+		memory[i] = loadModule[i]
+	}
+
+	return state{memory: memory, intHandlers: intHandlers}
 }
 
 func (s state) al() uint8 {
@@ -698,7 +711,12 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		return state{}, errors.Wrap(err, "error to parse header")
 	}
 
-	s := newState(header.exInitSS, header.exInitSP, header.exInitCS, header.exInitIP, intHandlers)
+	loadModule, err := ioutil.ReadAll(reader)
+	if err != nil {
+		return state{}, errors.Wrap(err, "error to parse load module")
+	}
+
+	s := newState(header, loadModule, intHandlers)
 
 	for {
 		inst, err := decodeInstWithParser(parser)
