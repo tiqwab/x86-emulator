@@ -77,6 +77,22 @@ func (parser *parser) parseWord() (word, error) {
 	return word(buf[1]) << 8 + word(buf[0]), nil
 }
 
+func (parser *parser) parseRemains() ([]byte, error) {
+	var buf []byte
+	for {
+		byte, err := parser.parseByte()
+		if err != nil {
+			if errors.Cause(err) == io.EOF {
+				break
+			} else {
+				return nil, errors.Wrap(err, "failed to parse")
+			}
+		}
+		buf = append(buf, byte)
+	}
+	return buf, nil
+}
+
 // --- header
 
 type header struct {
@@ -95,74 +111,81 @@ func (h header) String() string {
 		h.exSignature, h.exHeaderSize, h.exInitSS, h.exInitSP, h.exInitIP, h.exInitCS)
 }
 
-func parseHeader(reader io.Reader) (*header, error) {
+// header, load module, error
+func parseHeader(reader io.Reader) (*header, []byte, error) {
 	parser := newParser(reader)
 	return parseHeaderWithParser(parser)
 }
 
-func parseHeaderWithParser(parser *parser) (*header, error) {
+// header, load module, error
+func parseHeaderWithParser(parser *parser) (*header, []byte, error) {
 	var buf []byte
 
 	buf, err := parser.parseBytes(2)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse bytes at 0-1 of header")
+		return nil, nil, errors.Wrap(err, "failed to parse bytes at 0-1 of header")
 	}
 	exSignature := [2]byte{buf[0], buf[1]}
 
 	_, err = parser.parseBytes(4)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse bytes at 2-5 of header")
+		return nil, nil, errors.Wrap(err, "failed to parse bytes at 2-5 of header")
 	}
 
 	relocationItems, err := parser.parseWord()
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse bytes at 6-7 of header")
+		return nil, nil, errors.Wrap(err, "failed to parse bytes at 6-7 of header")
 	}
 
 	exHeaderSize, err := parser.parseWord()
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse bytes at 8-9 of header")
+		return nil, nil, errors.Wrap(err, "failed to parse bytes at 8-9 of header")
 	}
 
 	_, err = parser.parseBytes(4)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse bytes at 10-13 of header")
+		return nil, nil, errors.Wrap(err, "failed to parse bytes at 10-13 of header")
 	}
 
 	exInitSS, err := parser.parseWord()
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse bytes at 14-15 of header")
+		return nil, nil, errors.Wrap(err, "failed to parse bytes at 14-15 of header")
 	}
 
 	exInitSP, err := parser.parseWord()
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse bytes at 16-17 of header")
+		return nil, nil, errors.Wrap(err, "failed to parse bytes at 16-17 of header")
 	}
 
 	_, err = parser.parseBytes(2)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse bytes at 18-19 of header")
+		return nil, nil, errors.Wrap(err, "failed to parse bytes at 18-19 of header")
 	}
 
 	exInitIP, err := parser.parseWord()
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse bytes at 20-21 of header")
+		return nil, nil, errors.Wrap(err, "failed to parse bytes at 20-21 of header")
 	}
 
 	exInitCS, err := parser.parseWord()
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse bytes at 22-23 of header")
+		return nil, nil, errors.Wrap(err, "failed to parse bytes at 22-23 of header")
 	}
 
 	relocationTableOffset, err := parser.parseWord()
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse bytes at 24-25 of header")
+		return nil, nil, errors.Wrap(err, "failed to parse bytes at 24-25 of header")
 	}
 
 	remainHeaderBytes := int(exHeaderSize) * paragraphSize - int(parser.offset)
 	_, err = parser.parseBytes(remainHeaderBytes)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse bytes at 24-31 of header")
+		return nil, nil, errors.Wrap(err, "failed to parse remains of header")
+	}
+
+	loadModule, err := parser.parseRemains()
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to parse load module")
 	}
 
 	return &header{
@@ -174,8 +197,56 @@ func parseHeaderWithParser(parser *parser) (*header, error) {
 		exInitIP: exInitIP,
 		exInitCS: exInitCS,
 		relocationTableOffset: relocationTableOffset,
-	}, nil
+	}, loadModule, nil
 }
+
+// --- memory
+
+type memory struct {
+	loadModule []byte
+	loadModuleSize int
+}
+type address uint16
+
+// Prepare memory whose size is same as load module
+func newMemory(loadModule []byte) *memory {
+	loadModuleSize := len(loadModule)
+	m := make([]byte, loadModuleSize)
+	for i := 0; i < loadModuleSize; i++ {
+		m[i] = loadModule[i]
+	}
+	return &memory{loadModule: m, loadModuleSize: loadModuleSize}
+}
+
+func (memory *memory) readBytes(at address, n int) ([]byte, error) {
+	if int(at) + (n-1) >= memory.loadModuleSize {
+		return nil, fmt.Errorf("illegal address: 0x%05x", at)
+	}
+
+	buf := make([]byte, n)
+	for i := 0; i < n; i++ {
+		buf[i] = memory.loadModule[int(at)+i]
+	}
+	return buf, nil
+}
+
+func (memory *memory) readByte(at address) (byte, error) {
+	b, err := memory.readBytes(at, 1)
+	if err != nil {
+		return 0, errors.Wrap(err, "failed to read byte")
+	}
+	return b[0], nil
+}
+
+func (memory *memory) readWord(at address) (word, error) {
+	buf, err := memory.readBytes(at, 2)
+	if err != nil {
+		return 0, errors.Wrap(err, "failed to read word")
+	}
+	return word(buf[1]) << 8 + word(buf[0]), nil
+}
+
+// --- registers
 
 type registerW uint8
 type registerB uint8
@@ -311,8 +382,8 @@ type instLea struct {
 	address word
 }
 
-func decodeModRegRM(parser *parser) (byte, byte, registerW, error) {
-	buf, err := parser.parseByte()
+func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
+	buf, err := memory.readByte(at)
 	if err != nil {
 		return 0, 0, 0, errors.Wrap(err, "failed to parse byte")
 	}
@@ -324,37 +395,48 @@ func decodeModRegRM(parser *parser) (byte, byte, registerW, error) {
 	return mod, reg, rm, nil
 }
 
-func decodeInst(reader io.Reader) (interface{}, error) {
-	parser := newParser(reader)
-	return decodeInstWithParser(parser)
+// assume that reader for load module is passed
+// inst, read bytes, error
+func decodeInst(reader io.Reader) (interface{}, int, error) {
+	bytes, err := ioutil.ReadAll(reader)
+	if err != nil {
+		return nil, 0, err
+	}
+	memory := newMemory(bytes)
+	return decodeInstWithMemory(0, memory)
 }
 
-func decodeInstWithParser(parser *parser) (interface{}, error) {
+// inst, read bytes, error
+func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, int, error) {
 	var inst interface{}
+	currentAddress := initialAddress
 
-	rawOpcode, err := parser.parseByte()
+	rawOpcode, err := memory.readByte(currentAddress)
+	currentAddress++
 	if err != nil {
-		return inst, errors.Wrap(err, "failed to parse opcode")
+		return inst, -1, errors.Wrap(err, "failed to parse opcode")
 	}
 
 	switch rawOpcode {
 	// add r/m16, imm8
 	case 0x83:
-		mod, reg, rm, err := decodeModRegRM(parser)
+		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		currentAddress++
 		if err != nil {
-			return inst, errors.Wrap(err, "failed to decode mod/reg/rm")
+			return inst, -1, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
 
 		if mod != 3 {
-			return nil, errors.Errorf("expect mod is 0b11 but %02b", mod)
+			return nil, -1, errors.Errorf("expect mod is 0b11 but %02b", mod)
 		}
 		if reg != 0 {
-			return nil, errors.Errorf("expect reg is /0 but %d", reg)
+			return nil, -1, errors.Errorf("expect reg is /0 but %d", reg)
 		}
 
-		imm, err := parser.parseByte()
+		imm, err := memory.readByte(currentAddress)
+		currentAddress++
 		if err != nil {
-			return inst, errors.Wrap(err, "failed to parse imm")
+			return inst, -1, errors.Wrap(err, "failed to parse imm")
 		}
 
 		switch rm {
@@ -363,83 +445,88 @@ func decodeInstWithParser(parser *parser) (interface{}, error) {
 		case CX:
 			inst = instAdd{dest: CX, imm: imm}
 		default:
-			return nil, errors.Errorf("unknown register: %d", rm)
+			return nil, -1, errors.Errorf("unknown register: %d", rm)
 		}
 
 	// 8b /r (/r indicates that the ModR/M byte of the instruction contains a register operand and an r/m operand)
 	// mov r16,r/m16
 	case 0x8b:
-		mod, reg, rm, err := decodeModRegRM(parser)
+		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		currentAddress++
 		if err != nil {
-			return inst, errors.Wrap(err, "failed to decode mod/reg/rm")
+			return inst, -1, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
 
 		if mod == 3 {
 			dest, err := toRegisterW(uint8(reg))
 			if err != nil {
-				return inst, errors.Errorf("illegal reg value for registerW: %d", reg)
+				return inst, -1, errors.Errorf("illegal reg value for registerW: %d", reg)
 			}
 			src, err := toRegisterW(uint8(rm))
 			if err != nil {
-				return inst, errors.Errorf("illegal rm value for registerW: %d", rm)
+				return inst, -1, errors.Errorf("illegal rm value for registerW: %d", rm)
 			}
 			inst = instMovRegReg{dest: dest, src: src}
 		} else {
-			return inst, errors.Errorf("not yet implemented for mod 0x%02x", mod)
+			return inst, -1, errors.Errorf("not yet implemented for mod 0x%02x", mod)
 		}
 
 	// 8d /r
 	// lea r16,m
 	case 0x8d:
-		mod, reg, rm, err := decodeModRegRM(parser)
+		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		currentAddress++
 		if err != nil {
-			return inst, errors.Wrap(err, "failed to decode mod/reg/rm")
+			return inst, -1, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
 
 		if mod == 0 && rm == 6 {
 			dest, err := toRegisterW(reg)
 			if err != nil {
-				return inst, errors.Wrap(err, "illegal reg value for registerW")
+				return inst, -1, errors.Wrap(err, "illegal reg value for registerW")
 			}
-			address, err := parser.parseWord()
+			address, err := memory.readWord(currentAddress)
+			currentAddress += 2
 			if err != nil {
-				return inst, errors.Wrap(err, "failed to parse address of lea")
+				return inst, -1, errors.Wrap(err, "failed to parse address of lea")
 			}
 			inst = instLea{dest: dest, address: address}
 		} else {
-			return inst, errors.Errorf("mod and rm should be 0 and 3 respectively for lea? mod=%d, rm=%d actually", mod, rm)
+			return inst, -1, errors.Errorf("mod and rm should be 0 and 3 respectively for lea? mod=%d, rm=%d actually", mod, rm)
 		}
 
 	// 8e /r
 	// mov Sreg,r/m16
 	// Sreg ES=0, CS=1, SS=2, DS=3, FS=4, GS=5
 	case 0x8e:
-		mod, reg, rm, err := decodeModRegRM(parser)
+		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		currentAddress++
 		if err != nil {
-			return inst, errors.Wrap(err, "failed to decode mod/reg/rm")
+			return inst, -1, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
 
 		if mod == 3 {
 			dest, err := toRegisterS(reg)
 			if err != nil {
-				return inst, errors.Errorf("illegal reg value for registerS: %d", reg)
+				return inst, -1, errors.Errorf("illegal reg value for registerS: %d", reg)
 			}
 			src, err := toRegisterW(uint8(rm))
 			if err != nil {
-				return inst, errors.Errorf("illegal reg value for registerW: %d", rm)
+				return inst, -1, errors.Errorf("illegal reg value for registerW: %d", rm)
 			}
 			inst = instMovSRegReg{dest: dest, src: src}
 		} else {
-			return inst, errors.Errorf("not yet implemented for mod 0x%02x", mod)
+			return inst, -1, errors.Errorf("not yet implemented for mod 0x%02x", mod)
 		}
 
 	// b0+ rb ib
 	// mov r8,imm8
 	case 0xb4:
 		// ah
-		imm, err := parser.parseByte()
+		imm, err := memory.readByte(currentAddress)
+		currentAddress++
 		if err != nil {
-			return inst, errors.Wrap(err, "failed to decode imm")
+			return inst, -1, errors.Wrap(err, "failed to decode imm")
 		}
 		inst = instMovB{dest: AH, imm: imm}
 
@@ -447,35 +534,39 @@ func decodeInstWithParser(parser *parser) (interface{}, error) {
 	// mov r16,imm16
 	case 0xb8:
 		// ax
-		imm, err := parser.parseWord()
+		imm, err := memory.readWord(currentAddress)
+		currentAddress += 2
 		if err != nil {
-			return inst, errors.Wrap(err, "failed to decode imm")
+			return inst, -1, errors.Wrap(err, "failed to decode imm")
 		}
 		inst = instMov{dest: AX, imm: imm}
 	case 0xb9:
 		// cx
-		imm, err := parser.parseWord()
+		imm, err := memory.readWord(currentAddress)
+		currentAddress += 2
 		if err != nil {
-			return inst, errors.Wrap(err, "failed to decode imm")
+			return inst, -1, errors.Wrap(err, "failed to decode imm")
 		}
 		inst = instMov{dest: CX, imm: imm}
 
 	// shl r/m16,imm8
 	// FIXME: handle memory address as source
 	case 0xc1:
-		mod, reg, rm, err := decodeModRegRM(parser)
+		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		currentAddress++
 		if err != nil {
-			return inst, errors.Wrap(err, "failed to decode mod/reg/rm")
+			return inst, -1, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
 
 		if mod != 3 {
-			return nil, errors.Errorf("expect mod is 0b11 but %02b", mod)
+			return nil, -1, errors.Errorf("expect mod is 0b11 but %02b", mod)
 		}
 		if reg != 4 {
-			return nil, errors.Errorf("expect reg is /4 but %d", reg)
+			return nil, -1, errors.Errorf("expect reg is /4 but %d", reg)
 		}
 
-		imm, err := parser.parseByte()
+		imm, err := memory.readByte(currentAddress)
+		currentAddress++
 		if err != nil {
 			errors.Wrap(err, "failed to parse imm")
 		}
@@ -486,20 +577,21 @@ func decodeInstWithParser(parser *parser) (interface{}, error) {
 		case CX:
 			inst = instShl{register: CX, imm: imm}
 		default:
-			return nil, errors.Errorf("unknown register: %d", rm)
+			return nil, -1, errors.Errorf("unknown register: %d", rm)
 		}
 
 	// int imm8
 	case 0xcd:
-		operand, err := parser.parseByte()
+		operand, err := memory.readByte(currentAddress)
+		currentAddress++
 		if err != nil {
-			return inst, errors.Wrap(err, "failed to parse operand")
+			return inst, -1, errors.Wrap(err, "failed to parse operand")
 		}
 		inst = instInt{operand: operand}
 	default:
-		return inst, errors.Errorf("unknown opcode: 0x%02x", rawOpcode)
+		return inst, -1, errors.Errorf("unknown opcode: 0x%02x", rawOpcode)
 	}
-	return inst, nil
+	return inst, int(currentAddress - initialAddress), nil
 }
 
 // for int 21
@@ -518,17 +610,14 @@ func intHandler09(s *state) error {
 	return nil
 }
 
-type memory []byte
-
 type state struct {
 	ax, cx, ss, sp, cs, ip, ds word
-	memory memory
 	exitCode                   exitCode
 	shouldExit                 bool
 	intHandlers                intHandlers
 }
 
-func newState(header *header, loadModule []byte, customIntHandlers intHandlers) state {
+func newState(header *header, customIntHandlers intHandlers) state {
 	// --- Prepare interrupted handlers
 
 	intHandlers := make(intHandlers)
@@ -550,14 +639,7 @@ func newState(header *header, loadModule []byte, customIntHandlers intHandlers) 
 		}
 	}
 
-	// --- Prepare memory (assuming that cs=0)
-	loadModuleSize := len(loadModule)
-	memory := make(memory, loadModuleSize)
-	for i := 0; i < loadModuleSize; i++ {
-		memory[i] = loadModule[i]
-	}
-
-	return state{memory: memory, intHandlers: intHandlers}
+	return state{intHandlers: intHandlers}
 }
 
 func (s state) al() uint8 {
@@ -577,6 +659,10 @@ func (s state) reg(r registerW) (word, error) {
 	default:
 		return 0, errors.Errorf("illegal registerW or not implemented: %d", r)
 	}
+}
+
+func (s state) realIP() address {
+	return address(s.cs << 4 + s.ip)
 }
 
 func execMov(inst instMov, state state) (state, error) {
@@ -706,20 +792,17 @@ func execute(shouldBeInst interface{}, state state) (state, error) {
 
 func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (state, error) {
 	parser := newParser(reader)
-	header, err := parseHeaderWithParser(parser)
+	header, loadModule, err := parseHeaderWithParser(parser)
 	if err != nil {
 		return state{}, errors.Wrap(err, "error to parse header")
 	}
 
-	loadModule, err := ioutil.ReadAll(reader)
-	if err != nil {
-		return state{}, errors.Wrap(err, "error to parse load module")
-	}
+	memory := newMemory(loadModule)
 
-	s := newState(header, loadModule, intHandlers)
+	s := newState(header, intHandlers)
 
 	for {
-		inst, err := decodeInstWithParser(parser)
+		inst, readBytesCount, err := decodeInstWithMemory(s.realIP(), memory)
 		if err != nil {
 			if errors.Cause(err) == io.EOF {
 				break
@@ -735,6 +818,7 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		if s.shouldExit {
 			break
 		}
+		s.ip = s.ip + word(readBytesCount)
 	}
 
 	return s, nil
