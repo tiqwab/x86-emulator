@@ -1,6 +1,5 @@
 ```
-$ go build sample/exp_1_emu.go
-$ ./exp_1_emu sample/exp_1.exe
-$ echo $?
-99
+$ go build sample/emulate.go
+$ ./exp_1_emu sample/exp_4.exe
+Hello world!
 ```
