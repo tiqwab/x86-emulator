@@ -755,7 +755,15 @@ func (s state) ah() uint8 {
 	return uint8(s.ax >> 8)
 }
 
-func (s state) reg(r registerW) (word, error) {
+func (s state) realAddress(sreg word, reg word) address {
+	return realAddress(sreg, reg)
+}
+
+func (s state) realIP() address {
+	return address(s.cs << 4 + s.ip)
+}
+
+func (s state) readWordGeneralReg(r registerW) (word, error) {
 	switch r {
 	case AX:
 		return s.ax, nil
@@ -776,14 +784,6 @@ func (s state) reg(r registerW) (word, error) {
 	default:
 		return 0, errors.Errorf("illegal registerW or not implemented: %d", r)
 	}
-}
-
-func (s state) realAddress(sreg word, reg word) address {
-	return realAddress(sreg, reg)
-}
-
-func (s state) realIP() address {
-	return address(s.cs << 4 + s.ip)
 }
 
 func (s state) writeWordGeneralReg(r registerW, w word) (state, error) {
@@ -842,13 +842,13 @@ func execMovB(inst instMovB, state state) (state, error) {
 func execMovRegReg(inst instMovRegReg, state state) (state, error) {
 	switch inst.dest {
 	case AX:
-		v, err := state.reg(inst.src)
+		v, err := state.readWordGeneralReg(inst.src)
 		if err != nil {
 			return state, errors.Wrap(err, "failed to get reg")
 		}
 		state.ax = v
 	case CX:
-		v, err := state.reg(inst.src)
+		v, err := state.readWordGeneralReg(inst.src)
 		if err != nil {
 			return state, errors.Wrap(err, "failed to get reg")
 		}
@@ -862,7 +862,7 @@ func execMovRegReg(inst instMovRegReg, state state) (state, error) {
 func execMovSRegReg(inst instMovSRegReg, state state) (state, error) {
 	switch inst.dest {
 	case DS:
-		v, err := state.reg(inst.src)
+		v, err := state.readWordGeneralReg(inst.src)
 		if err != nil {
 			return state, errors.Wrap(err, "failed to get reg")
 		}
@@ -930,7 +930,7 @@ func execInt(inst instInt, state state, memory *memory) (state, error) {
 
 func execPush(inst instPush, state state, memory *memory) (state, error) {
 	state.sp -= 2
-	v, err := state.reg(inst.src)
+	v, err := state.readWordGeneralReg(inst.src)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execPush")
 	}
