@@ -23,6 +23,10 @@ type exe struct {
 	header header
 }
 
+func realAddress(seg word, offset word) address {
+	return address(seg) << 4 + address(offset)
+}
+
 // --- parser
 
 type parser struct {
@@ -204,7 +208,7 @@ func parseHeaderWithParser(parser *parser) (*header, []byte, error) {
 
 type memory struct {
 	loadModule []byte
-	loadModuleSize int
+	memorySize int
 }
 type address uint16
 
@@ -215,11 +219,23 @@ func newMemory(loadModule []byte) *memory {
 	for i := 0; i < loadModuleSize; i++ {
 		m[i] = loadModule[i]
 	}
-	return &memory{loadModule: m, loadModuleSize: loadModuleSize}
+	return &memory{loadModule: m, memorySize: loadModuleSize}
+}
+
+// TODO: How to calculate the necessary stack size?
+func newMemoryFromHeader(loadModule []byte, header *header) *memory {
+	loadModuleSize := len(loadModule)
+	stackSize := int(realAddress(header.exInitSS, header.exInitSP))
+	memorySize := loadModuleSize + stackSize
+	m := make([]byte, memorySize)
+	for i := 0; i < loadModuleSize; i++ {
+		m[i] = loadModule[i]
+	}
+	return &memory{loadModule: m, memorySize: memorySize}
 }
 
 func (memory *memory) readBytes(at address, n int) ([]byte, error) {
-	if int(at) + (n-1) >= memory.loadModuleSize {
+	if int(at) + (n-1) >= memory.memorySize {
 		return nil, fmt.Errorf("illegal address: 0x%05x", at)
 	}
 
@@ -244,6 +260,17 @@ func (memory *memory) readWord(at address) (word, error) {
 		return 0, errors.Wrap(err, "failed to read word")
 	}
 	return word(buf[1]) << 8 + word(buf[0]), nil
+}
+
+func (memory *memory) writeWord(at address, w word) error {
+	if int(at) >= memory.memorySize {
+		return fmt.Errorf("illegal address: 0x%05x", at)
+	}
+	low := byte(w & 0x00ff)
+	high := byte((w & 0xff00) >> 8)
+	memory.loadModule[at] = low
+	memory.loadModule[at+1] = high
+	return nil
 }
 
 // --- registers
@@ -386,6 +413,10 @@ type instPush struct {
 	src registerW
 }
 
+type instPop struct {
+	dest registerW
+}
+
 func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
 	buf, err := memory.readByte(at)
 	if err != nil {
@@ -446,6 +477,31 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// push di
 	case 0x57:
 		inst = instPush{src: DI}
+
+	// pop ax
+	case 0x58:
+		inst = instPop{dest: AX}
+	// pop cx
+	case 0x59:
+		inst = instPop{dest: CX}
+	// pop dx
+	case 0x5a:
+		inst = instPop{dest: DX}
+	// pop bx
+	case 0x5b:
+		inst = instPop{dest: BX}
+	// pop sp
+	case 0x5c:
+		inst = instPop{dest: SP}
+	// pop bp
+	case 0x5d:
+		inst = instPop{dest: BP}
+	// pop si
+	case 0x5e:
+		inst = instPop{dest: SI}
+	// pop di
+	case 0x5f:
+		inst = instPop{dest: DI}
 
 	// add r/m16, imm8
 	case 0x83:
@@ -655,7 +711,7 @@ func intHandler09(s *state, memory *memory) error {
 
 // FIXME: Type general registers, segment registers respectively
 type state struct {
-	ax, cx, dx, ss, sp, cs, ip, ds word
+	ax, cx, dx, bx, sp, bp, si, di, ss, cs, ip, ds word
 	exitCode                   exitCode
 	shouldExit                 bool
 	intHandlers                intHandlers
@@ -705,17 +761,60 @@ func (s state) reg(r registerW) (word, error) {
 		return s.ax, nil
 	case CX:
 		return s.cx, nil
+	case DX:
+		return s.dx, nil
+	case BX:
+		return s.bx, nil
+	case SP:
+		return s.sp, nil
+	case BP:
+		return s.bp, nil
+	case SI:
+		return s.si, nil
+	case DI:
+		return s.di, nil
 	default:
 		return 0, errors.Errorf("illegal registerW or not implemented: %d", r)
 	}
 }
 
 func (s state) realAddress(sreg word, reg word) address {
-	return address(sreg) << 4 + address(reg)
+	return realAddress(sreg, reg)
 }
 
 func (s state) realIP() address {
 	return address(s.cs << 4 + s.ip)
+}
+
+func (s state) writeWordGeneralReg(r registerW, w word) (state, error) {
+	switch r {
+	case AX:
+		s.ax = w
+		return s, nil
+	case CX:
+		s.cx = w
+		return s, nil
+	case DX:
+		s.dx = w
+		return s, nil
+	case BX:
+		s.bx = w
+		return s, nil
+	case SP:
+		s.sp = w
+		return s, nil
+	case BP:
+		s.bp = w
+		return s, nil
+	case SI:
+		s.si = w
+		return s, nil
+	case DI:
+		s.di = w
+		return s, nil
+	default:
+		return s, errors.Errorf("illegal registerW or not implemented: %d", r)
+	}
 }
 
 func execMov(inst instMov, state state) (state, error) {
@@ -829,6 +928,30 @@ func execInt(inst instInt, state state, memory *memory) (state, error) {
 	return state, nil
 }
 
+func execPush(inst instPush, state state, memory *memory) (state, error) {
+	state.sp -= 2
+	v, err := state.reg(inst.src)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execPush")
+	}
+	memory.writeWord(state.realAddress(state.ss, state.sp), v)
+	return state, nil
+}
+
+func execPop(inst instPop, state state, memory *memory) (state, error) {
+	w, err := memory.readWord(state.realAddress(state.ss, state.sp))
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execPop")
+	}
+	state, err = state.writeWordGeneralReg(inst.dest, w)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execPop")
+	}
+	state.sp += 2
+
+	return state, nil
+}
+
 func execute(shouldBeInst interface{}, state state, memory *memory) (state, error) {
 	switch inst := shouldBeInst.(type) {
 	case instMov:
@@ -847,6 +970,10 @@ func execute(shouldBeInst interface{}, state state, memory *memory) (state, erro
 		return execLea(inst, state)
 	case instInt:
 		return execInt(inst, state, memory)
+	case instPush:
+		return execPush(inst, state, memory)
+	case instPop:
+		return execPop(inst, state, memory)
 	default:
 		return state, errors.Errorf("unknown inst: %T", shouldBeInst)
 	}
@@ -859,7 +986,7 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		return state{}, errors.Wrap(err, "error to parse header")
 	}
 
-	memory := newMemory(loadModule)
+	memory := newMemoryFromHeader(loadModule, header)
 
 	s := newState(header, intHandlers)
 

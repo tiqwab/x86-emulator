@@ -336,6 +336,40 @@ func TestDecodePushGeneralRegisters(t *testing.T) {
 	}
 }
 
+func TestDecodePopGeneralRegisters(t *testing.T) {
+	// pop ax, cx, dx, bx, sp, bp, si, di
+	var readers = []io.Reader{
+		bytes.NewReader([]byte{0x58}),
+		bytes.NewReader([]byte{0x59}),
+		bytes.NewReader([]byte{0x5a}),
+		bytes.NewReader([]byte{0x5b}),
+		bytes.NewReader([]byte{0x5c}),
+		bytes.NewReader([]byte{0x5d}),
+		bytes.NewReader([]byte{0x5e}),
+		bytes.NewReader([]byte{0x5f}),
+	}
+	var expected = []instPop{
+		instPop{dest: AX},
+		instPop{dest: CX},
+		instPop{dest: DX},
+		instPop{dest: BX},
+		instPop{dest: SP},
+		instPop{dest: BP},
+		instPop{dest: SI},
+		instPop{dest: DI},
+	}
+
+	for i := 0; i < len(readers); i++ {
+		actual, _, err := decodeInst(readers[i])
+		if err != nil {
+			t.Errorf("%+v", err)
+		}
+		if actual != expected[i] {
+			t.Errorf("expected %v but actual %v", expected[i], actual)
+		}
+	}
+}
+
 // run
 
 func (code machineCode) withMov() machineCode {
@@ -483,5 +517,38 @@ func TestInt21_09(t *testing.T) {
 
 	if err = tempFile.Close(); err != nil {
 		t.Errorf("%+v", err)
+	}
+}
+
+func rawHeaderForTestPush() machineCode {
+	return []byte{
+		0x4d, 0x5a, 0x2b, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x01, 0xff, 0xff, 0x01, 0x00,
+		0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+}
+
+func TestPushAndPop(t *testing.T) {
+	b := rawHeaderForTestPush()
+	b = append(b, []byte{0xb8, 0x35, 0x10}...) // mov ax, 0x1035
+	b = append(b, []byte{0xb9, 0x36, 0x20}...) // mov cx, 0x2036
+	b = append(b, []byte{0x50}...) // push ax
+	b = append(b, []byte{0x51}...) // push cx
+	b = append(b, []byte{0x5b}...) // pop bx
+	b = append(b, []byte{0x5a}...) // pop dx
+	b = append(b, []byte{0xb8, 0x00, 0x4c}...) // mov ax,4c00h
+	b = append(b, []byte{0xcd, 0x21}...) // int 21h
+
+	intHandlers := make(intHandlers)
+
+	actual, err := runExeWithCustomIntHandlers(bytes.NewReader(b), intHandlers)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+
+	if actual.dx != 0x1035 {
+		t.Errorf("expect 0x%04x but 0x%04x", 0x1035, actual.dx)
+	}
+	if actual.bx != 0x2036 {
+		t.Errorf("expect 0x%04x but 0x%04x", 0x2036, actual.bx)
 	}
 }
