@@ -654,7 +654,7 @@ func newState(header *header, customIntHandlers intHandlers) state {
 		}
 	}
 
-	return state{intHandlers: intHandlers}
+	return state{ip: header.exInitIP, intHandlers: intHandlers}
 }
 
 func (s state) al() uint8 {
