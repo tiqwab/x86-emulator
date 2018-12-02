@@ -131,7 +131,7 @@ func TestParseHeaderRelocationOffset(t *testing.T) {
 func rawHeaderForTestInitilization() []byte {
 	return []byte{
 		0x4d, 0x5a, 0x71, 0x00, 0x01, 0x00, 0x01, 0x00, 0x03, 0x00, 0x01, 0x01, 0xff, 0xff, 0x05, 0x00,
-		0x00, 0x10, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x10, 0x00, 0x00, 0x0c, 0x00, 0x03, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x15, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	}
 }
@@ -145,10 +145,28 @@ func TestInitialization(t *testing.T) {
 	intHandlers := make(intHandlers)
 	state := newState(header, intHandlers)
 
+	// check CS
+	expectedCS := word(0x0003)
+	if state.cs != expectedCS {
+		t.Errorf("expected %v but actual %v", expectedCS, state.cs)
+	}
+
 	// check IP
 	expectedIP := word(0x000c)
 	if state.ip != expectedIP {
 		t.Errorf("expected %v but actual %v", expectedIP, state.ip)
+	}
+
+	// check SS
+	expectedSS := word(0x0005)
+	if state.ss != expectedSS {
+		t.Errorf("expected %v but actual %v", expectedSS, state.ss)
+	}
+
+	// check SP
+	expectedSP := word(0x1000)
+	if state.sp != expectedSP {
+		t.Errorf("expected %v but actual %v", expectedSP, state.sp)
 	}
 }
 
@@ -299,8 +317,16 @@ func (code machineCode) withInt21_4c() machineCode {
 	return append(code, int21...)
 }
 
+func rawHeaderForRunExe() machineCode {
+	return []byte{
+		0x4d, 0x5a, 0x2b, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x01, 0xff, 0xff, 0x01, 0x00,
+		0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+}
+
+
 func TestRunExe(t *testing.T) {
-	_, _, err := RunExe(bytes.NewReader(rawHeader().withMov().withInt21_4c()))
+	_, _, err := RunExe(bytes.NewReader(rawHeaderForRunExe().withMov().withInt21_4c()))
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
@@ -308,7 +334,7 @@ func TestRunExe(t *testing.T) {
 
 func TestInt21_4c_ax(t *testing.T) {
 	// exit status 1
-	b := rawHeader()
+	b := rawHeaderForRunExe()
 	b = append(b, []byte{0xb8, 0x4c, 0x00}...) // mov ax,4ch
 	b = append(b, []byte{0xc1, 0xe0, 0x08}...) // shl ax,8
 	b = append(b, []byte{0x83, 0xc0, 0x01}...) // add ax,01h
@@ -337,7 +363,7 @@ func TestInt21_4c_ax(t *testing.T) {
 
 func TestInt21_4c_cx(t *testing.T) {
 	// exit status 1
-	b := rawHeader()
+	b := rawHeaderForRunExe()
 	b = append(b, []byte{0xb9, 0x4c, 0x00}...) // mov cx,4ch
 	b = append(b, []byte{0xc1, 0xe1, 0x08}...) // shl cx,8
 	b = append(b, []byte{0x83, 0xc1, 0x01}...) // add cx,01h
