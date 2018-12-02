@@ -382,6 +382,10 @@ type instLea struct {
 	address word
 }
 
+type instPush struct {
+	src registerW
+}
+
 func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
 	buf, err := memory.readByte(at)
 	if err != nil {
@@ -418,6 +422,31 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	}
 
 	switch rawOpcode {
+	// push ax
+	case 0x50:
+		inst = instPush{src: AX}
+	// push cx
+	case 0x51:
+		inst = instPush{src: CX}
+	// push dx
+	case 0x52:
+		inst = instPush{src: DX}
+	// push bx
+	case 0x53:
+		inst = instPush{src: BX}
+	// push sp
+	case 0x54:
+		inst = instPush{src: SP}
+	// push bp
+	case 0x55:
+		inst = instPush{src: BP}
+	// push si
+	case 0x56:
+		inst = instPush{src: SI}
+	// push di
+	case 0x57:
+		inst = instPush{src: DI}
+
 	// add r/m16, imm8
 	case 0x83:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)

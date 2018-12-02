@@ -302,6 +302,40 @@ func TestDecodeLeaDx(t *testing.T) {
 	}
 }
 
+func TestDecodePushGeneralRegisters(t *testing.T) {
+	// push ax, cx, dx, bx, sp, bp, si, di
+	var readers = []io.Reader{
+		bytes.NewReader([]byte{0x50}),
+		bytes.NewReader([]byte{0x51}),
+		bytes.NewReader([]byte{0x52}),
+		bytes.NewReader([]byte{0x53}),
+		bytes.NewReader([]byte{0x54}),
+		bytes.NewReader([]byte{0x55}),
+		bytes.NewReader([]byte{0x56}),
+		bytes.NewReader([]byte{0x57}),
+	}
+	var expected = []instPush{
+		instPush{src: AX},
+		instPush{src: CX},
+		instPush{src: DX},
+		instPush{src: BX},
+		instPush{src: SP},
+		instPush{src: BP},
+		instPush{src: SI},
+		instPush{src: DI},
+	}
+
+	for i := 0; i < len(readers); i++ {
+		actual, _, err := decodeInst(readers[i])
+		if err != nil {
+			t.Errorf("%+v", err)
+		}
+		if actual != expected[i] {
+			t.Errorf("expected %v but actual %v", expected[i], actual)
+		}
+	}
+}
+
 // run
 
 func (code machineCode) withMov() machineCode {
