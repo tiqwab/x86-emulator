@@ -370,6 +370,19 @@ func TestDecodePopGeneralRegisters(t *testing.T) {
 	}
 }
 
+func TestDecodeCall(t *testing.T) {
+	// call rel16
+	var reader io.Reader = bytes.NewReader([]byte{0xe8, 0xdc, 0xff})
+	actual, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instCall{rel: -36} // 0xffdc
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 // run
 
 func (code machineCode) withMov() machineCode {

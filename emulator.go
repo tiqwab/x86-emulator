@@ -1,10 +1,12 @@
 package x86_emulator
 
 import (
-	"io"
 	"bufio"
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"github.com/pkg/errors"
+	"io"
 	"io/ioutil"
 )
 
@@ -262,6 +264,20 @@ func (memory *memory) readWord(at address) (word, error) {
 	return word(buf[1]) << 8 + word(buf[0]), nil
 }
 
+func (memory *memory) readInt16(at address) (int16, error) {
+	var v int16
+	bs, err := memory.readBytes(at, 2)
+	if err != nil {
+		return 0, errors.Wrap(err, "failed to read int16")
+	}
+	buf := bytes.NewReader(bs)
+	err = binary.Read(buf, binary.LittleEndian, &v)
+	if err != nil {
+		return 0, errors.Wrap(err, "failed to parse as int16")
+	}
+	return v, nil
+}
+
 func (memory *memory) writeWord(at address, w word) error {
 	if int(at) >= memory.memorySize {
 		return fmt.Errorf("illegal address: 0x%05x", at)
@@ -415,6 +431,10 @@ type instPush struct {
 
 type instPop struct {
 	dest registerW
+}
+
+type instCall struct {
+	rel int16
 }
 
 func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
@@ -673,6 +693,16 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			return inst, -1, errors.Wrap(err, "failed to parse operand")
 		}
 		inst = instInt{operand: operand}
+
+	// call rel16
+	case 0xe8:
+		rel, err := memory.readInt16(currentAddress)
+		currentAddress += 2
+		if err != nil {
+			return inst, -1, errors.Wrap(err, "failed to parse int16")
+		}
+		inst = instCall{rel: rel}
+
 	default:
 		return inst, -1, errors.Errorf("unknown opcode: 0x%02x", rawOpcode)
 	}
