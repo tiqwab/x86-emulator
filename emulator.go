@@ -437,6 +437,10 @@ type instCall struct {
 	rel int16
 }
 
+type instRet struct {
+
+}
+
 func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
 	buf, err := memory.readByte(at)
 	if err != nil {
@@ -684,6 +688,10 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		default:
 			return nil, -1, errors.Errorf("unknown register: %d", rm)
 		}
+
+	// ret (near return)
+	case 0xc3:
+		inst = instRet{}
 
 	// int imm8
 	case 0xcd:

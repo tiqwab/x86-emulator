@@ -383,6 +383,19 @@ func TestDecodeCall(t *testing.T) {
 	}
 }
 
+func TestDecodeRet(t *testing.T) {
+	// ret (near return)
+	var reader io.Reader = bytes.NewReader([]byte{0xc3})
+	actual, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instRet{}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 // run
 
 func (code machineCode) withMov() machineCode {
