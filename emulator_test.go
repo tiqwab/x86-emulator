@@ -578,3 +578,28 @@ func TestPushAndPop(t *testing.T) {
 		t.Errorf("expect 0x%04x but 0x%04x", 0x2036, actual.bx)
 	}
 }
+
+func rawHeaderForTestFunctionCall() machineCode {
+	return []byte{
+		0x4d, 0x5a, 0x29, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x01, 0xff, 0xff, 0x01, 0x00,
+		0x00, 0x10, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+}
+
+func TestFunctionCall(t *testing.T) {
+	b := rawHeaderForTestFunctionCall()
+	b = append(b, []byte{0xb8, 0x07, 0x4c}...) // mov ax,0x4c07
+	b = append(b, []byte{0xc3}...) // ret
+	b = append(b, []byte{0xe8, 0xf9, 0xff}...) // call -7
+	b = append(b, []byte{0xcd, 0x21}...) // int 21h
+
+	intHandlers := make(intHandlers)
+
+	actual, err := runExeWithCustomIntHandlers(bytes.NewReader(b), intHandlers)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	if actual.exitCode != 7 {
+		t.Errorf("expect %d but actual %d", 7, actual.exitCode)
+	}
+}

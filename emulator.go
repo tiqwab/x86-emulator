@@ -855,6 +855,24 @@ func (s state) writeWordGeneralReg(r registerW, w word) (state, error) {
 	}
 }
 
+func (s state) pushWord(w word, memory *memory) (state, error) {
+	s.sp -= 2
+	err := memory.writeWord(s.realAddress(s.ss, s.sp), w)
+	if err != nil {
+		return s, errors.Wrap(err, "failed to push word")
+	}
+	return s, nil
+}
+
+func (s state) popWord(memory *memory) (word, state, error) {
+	w, err := memory.readWord(s.realAddress(s.ss, s.sp))
+	if err != nil {
+		return 0, s, errors.Wrap(err, "failed in execPop")
+	}
+	s.sp += 2
+	return w, s, nil
+}
+
 func execMov(inst instMov, state state) (state, error) {
 	switch inst.dest {
 	case AX:
@@ -967,26 +985,41 @@ func execInt(inst instInt, state state, memory *memory) (state, error) {
 }
 
 func execPush(inst instPush, state state, memory *memory) (state, error) {
-	state.sp -= 2
 	v, err := state.readWordGeneralReg(inst.src)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execPush")
 	}
-	memory.writeWord(state.realAddress(state.ss, state.sp), v)
+	state, err = state.pushWord(v, memory)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execPush")
+	}
 	return state, nil
 }
 
 func execPop(inst instPop, state state, memory *memory) (state, error) {
-	w, err := memory.readWord(state.realAddress(state.ss, state.sp))
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execPop")
-	}
+	w, state, err := state.popWord(memory)
 	state, err = state.writeWordGeneralReg(inst.dest, w)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execPop")
 	}
-	state.sp += 2
+	return state, nil
+}
 
+func execCall(inst instCall, state state, memory *memory) (state, error) {
+	state, err := state.pushWord(state.ip, memory)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execCall")
+	}
+	state.ip = word(int16(state.ip) + inst.rel)
+	return state, nil
+}
+
+func execRet(inst instRet, state state, memory *memory) (state, error) {
+	returnAddress, state, err := state.popWord(memory)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execRet")
+	}
+	state.ip = returnAddress
 	return state, nil
 }
 
@@ -1012,6 +1045,10 @@ func execute(shouldBeInst interface{}, state state, memory *memory) (state, erro
 		return execPush(inst, state, memory)
 	case instPop:
 		return execPop(inst, state, memory)
+	case instCall:
+		return execCall(inst, state, memory)
+	case instRet:
+		return execRet(inst, state, memory)
 	default:
 		return state, errors.Errorf("unknown inst: %T", shouldBeInst)
 	}
@@ -1038,6 +1075,7 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 			}
 		}
 
+		s.ip = s.ip + word(readBytesCount)
 		s, err = execute(inst, s, memory)
 		if err != nil {
 			return state{}, errors.Wrap(err, "errors to execute")
@@ -1045,7 +1083,6 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		if s.shouldExit {
 			break
 		}
-		s.ip = s.ip + word(readBytesCount)
 	}
 
 	return s, nil
