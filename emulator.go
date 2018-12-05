@@ -264,6 +264,20 @@ func (memory *memory) readWord(at address) (word, error) {
 	return word(buf[1]) << 8 + word(buf[0]), nil
 }
 
+func (memory *memory) readInt8(at address) (int8, error) {
+	var v int8
+	bs, err := memory.readBytes(at, 1)
+	if err != nil {
+		return 0, errors.Wrap(err, "failed to read int8")
+	}
+	buf := bytes.NewReader(bs)
+	err = binary.Read(buf, binary.LittleEndian, &v)
+	if err != nil {
+		return 0, errors.Wrap(err, "failed to parse as int8")
+	}
+	return v, nil
+}
+
 func (memory *memory) readInt16(at address) (int16, error) {
 	var v int16
 	bs, err := memory.readBytes(at, 2)
@@ -441,6 +455,12 @@ type instRet struct {
 
 }
 
+type instMovRegMemDisp struct {
+	dest registerW
+	base registerW
+	disp int8
+}
+
 func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
 	buf, err := memory.readByte(at)
 	if err != nil {
@@ -576,6 +596,21 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 				return inst, -1, errors.Errorf("illegal rm value for registerW: %d", rm)
 			}
 			inst = instMovRegReg{dest: dest, src: src}
+		} else if mod == 1 {
+			dest, err := toRegisterW(uint8(reg))
+			if err != nil {
+				return inst, -1, errors.Errorf("illegal reg value for registerW: %d", reg)
+			}
+			switch(rm) {
+			case 6:
+				disp, err := memory.readInt8(currentAddress)
+				if err != nil {
+					return inst, -1, errors.Errorf("failed to read as int8")
+				}
+				inst = instMovRegMemDisp{dest: dest, base: BP, disp: disp}
+			default:
+				return inst, -1, errors.Errorf("not yet implemented for rm %d", rm)
+			}
 		} else {
 			return inst, -1, errors.Errorf("not yet implemented for mod 0x%02x", mod)
 		}

@@ -396,6 +396,19 @@ func TestDecodeRet(t *testing.T) {
 	}
 }
 
+func TestDecodeMovWithDisp(t *testing.T) {
+	// mov ax,[bp+4]
+	var reader io.Reader = bytes.NewReader([]byte{0x8b, 0x46, 0x04})
+	actual, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instMovRegMemDisp{dest: AX, base: BP, disp: 4}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 // run
 
 func (code machineCode) withMov() machineCode {
