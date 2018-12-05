@@ -424,6 +424,11 @@ type instMovSRegReg struct {
 	src registerW
 }
 
+type instMovRegMemBP struct {
+	dest registerW
+	disp int8
+}
+
 type instShl struct {
 	register registerW
 	imm uint8
@@ -453,12 +458,6 @@ type instCall struct {
 
 type instRet struct {
 
-}
-
-type instMovRegMemDisp struct {
-	dest registerW
-	base registerW
-	disp int8
 }
 
 func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
@@ -604,10 +603,11 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			switch(rm) {
 			case 6:
 				disp, err := memory.readInt8(currentAddress)
+				currentAddress++
 				if err != nil {
 					return inst, -1, errors.Errorf("failed to read as int8")
 				}
-				inst = instMovRegMemDisp{dest: dest, base: BP, disp: disp}
+				inst = instMovRegMemBP{dest: dest, disp: disp}
 			default:
 				return inst, -1, errors.Errorf("not yet implemented for rm %d", rm)
 			}
@@ -692,6 +692,14 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			return inst, -1, errors.Wrap(err, "failed to decode imm")
 		}
 		inst = instMov{dest: CX, imm: imm}
+	case 0xba:
+		// dx
+		imm, err := memory.readWord(currentAddress)
+		currentAddress += 2
+		if err != nil {
+			return inst, -1, errors.Wrap(err, "failed to decode imm")
+		}
+		inst = instMov{dest: DX, imm: imm}
 
 	// shl r/m16,imm8
 	// FIXME: handle memory address as source
@@ -914,6 +922,8 @@ func execMov(inst instMov, state state) (state, error) {
 		state.ax = inst.imm
 	case CX:
 		state.cx = inst.imm
+	case DX:
+		state.dx = inst.imm
 	default:
 		return state, errors.Errorf("unknown register: %v", inst.dest)
 	}
@@ -931,19 +941,21 @@ func execMovB(inst instMovB, state state) (state, error) {
 }
 
 func execMovRegReg(inst instMovRegReg, state state) (state, error) {
+	v, err := state.readWordGeneralReg(inst.src)
+	if err != nil {
+		return state, errors.Wrap(err, "failed to get reg")
+	}
 	switch inst.dest {
 	case AX:
-		v, err := state.readWordGeneralReg(inst.src)
-		if err != nil {
-			return state, errors.Wrap(err, "failed to get reg")
-		}
 		state.ax = v
 	case CX:
-		v, err := state.readWordGeneralReg(inst.src)
-		if err != nil {
-			return state, errors.Wrap(err, "failed to get reg")
-		}
 		state.cx = v
+	case DX:
+		state.dx = v
+	case SP:
+		state.sp = v
+	case BP:
+		state.bp = v
 	default:
 		return state, errors.Errorf("unknown register: %v", inst.dest)
 	}
@@ -960,6 +972,23 @@ func execMovSRegReg(inst instMovSRegReg, state state) (state, error) {
 		state.ds = v
 	default:
 		return state, errors.Errorf("unknown register: %v", inst.dest)
+	}
+	return state, nil
+}
+
+func execMovRegMemBP(inst instMovRegMemBP, state state, memory *memory) (state, error) {
+	base, err := state.readWordGeneralReg(BP)
+	if err != nil {
+		return state, errors.Wrap(err, "failed to get reg")
+	}
+	at := address(int(state.realAddress(state.ss, base)) + int(inst.disp))
+	v, err := memory.readWord(at)
+	if err != nil {
+		return state, errors.Wrap(err, "failed to read memory")
+	}
+	state, err = state.writeWordGeneralReg(inst.dest, v)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in moving to reg")
 	}
 	return state, nil
 }
@@ -1068,6 +1097,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory) (state, erro
 		return execMovRegReg(inst, state)
 	case instMovSRegReg:
 		return execMovSRegReg(inst, state)
+	case instMovRegMemBP:
+		return execMovRegMemBP(inst, state, memory)
 	case instShl:
 		return execShl(inst, state)
 	case instAdd:

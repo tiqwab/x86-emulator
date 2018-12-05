@@ -403,7 +403,7 @@ func TestDecodeMovWithDisp(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instMovRegMemDisp{dest: AX, base: BP, disp: 4}
+	expected := instMovRegMemBP{dest: AX, disp: 4}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
@@ -604,6 +604,42 @@ func TestFunctionCall(t *testing.T) {
 	b = append(b, []byte{0xb8, 0x07, 0x4c}...) // mov ax,0x4c07
 	b = append(b, []byte{0xc3}...) // ret
 	b = append(b, []byte{0xe8, 0xf9, 0xff}...) // call -7
+	b = append(b, []byte{0xcd, 0x21}...) // int 21h
+
+	intHandlers := make(intHandlers)
+
+	actual, err := runExeWithCustomIntHandlers(bytes.NewReader(b), intHandlers)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	if actual.exitCode != 7 {
+		t.Errorf("expect %d but actual %d", 7, actual.exitCode)
+	}
+}
+
+func rawHeaderForTestFunctionCallWithParameter() machineCode {
+	return []byte{
+		0x4d, 0x5a, 0x37, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x01, 0xff, 0xff, 0x02, 0x00,
+		0x00, 0x10, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x55, 0x8b, 0xec, 0x8b, 0x46, 0x04, 0x5d, 0xc3, 0x55, 0x8b, 0xec, 0xba, 0x07, 0x4c, 0x52, 0xe8,
+		0xee, 0xff, 0x8b, 0xe5, 0x5d, 0xcd, 0x21,
+	}
+}
+
+func TestFunctionCallWithParameter(t *testing.T) {
+	b := rawHeaderForTestFunctionCallWithParameter()
+	b = append(b, []byte{0x55}...) // push bp
+	b = append(b, []byte{0x8b, 0xec}...) // mov bp,sp
+	b = append(b, []byte{0x8b, 0x46, 0x04}...) // mov ax,[bp+4]
+	b = append(b, []byte{0x5d}...) // pop bp
+	b = append(b, []byte{0xc3}...) // ret
+	b = append(b, []byte{0x55}...) // push bp
+	b = append(b, []byte{0x8b, 0xec}...) // mov bp,sp
+	b = append(b, []byte{0xba, 0x07, 0x4c}...) // mov dx,0x4c07
+	b = append(b, []byte{0x52}...) // push dx
+	b = append(b, []byte{0xe8, 0xee, 0xff}...) // call near ptr f
+	b = append(b, []byte{0x8b, 0xe5}...) // mov sp,bp
+	b = append(b, []byte{0x5d}...) // pop bp
 	b = append(b, []byte{0xcd, 0x21}...) // int 21h
 
 	intHandlers := make(intHandlers)
