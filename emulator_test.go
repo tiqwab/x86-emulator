@@ -605,64 +605,33 @@ func TestPushAndPop(t *testing.T) {
 	}
 }
 
-func rawHeaderForTestFunctionCall() machineCode {
-	return []byte{
-		0x4d, 0x5a, 0x29, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x01, 0xff, 0xff, 0x01, 0x00,
-		0x00, 0x10, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	}
-}
+// RunExe with sample file
 
-func TestFunctionCall(t *testing.T) {
-	b := rawHeaderForTestFunctionCall()
-	b = append(b, []byte{0xb8, 0x07, 0x4c}...) // mov ax,0x4c07
-	b = append(b, []byte{0xc3}...) // ret
-	b = append(b, []byte{0xe8, 0xf9, 0xff}...) // call -7
-	b = append(b, []byte{0xcd, 0x21}...) // int 21h
-
-	intHandlers := make(intHandlers)
-
-	actual, err := runExeWithCustomIntHandlers(bytes.NewReader(b), intHandlers)
+func TestRunExeWithSampleFcall(t *testing.T) {
+	file, err := os.Open("sample/fcall.exe")
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	if actual.exitCode != 7 {
-		t.Errorf("expect %d but actual %d", 7, actual.exitCode)
-	}
-}
-
-func rawHeaderForTestFunctionCallWithParameter() machineCode {
-	return []byte{
-		0x4d, 0x5a, 0x37, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x01, 0xff, 0xff, 0x02, 0x00,
-		0x00, 0x10, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x55, 0x8b, 0xec, 0x8b, 0x46, 0x04, 0x5d, 0xc3, 0x55, 0x8b, 0xec, 0xba, 0x07, 0x4c, 0x52, 0xe8,
-		0xee, 0xff, 0x8b, 0xe5, 0x5d, 0xcd, 0x21,
-	}
-}
-
-func TestFunctionCallWithParameter(t *testing.T) {
-	b := rawHeaderForTestFunctionCallWithParameter()
-	b = append(b, []byte{0x55}...) // push bp
-	b = append(b, []byte{0x8b, 0xec}...) // mov bp,sp
-	b = append(b, []byte{0x8b, 0x46, 0x04}...) // mov ax,[bp+4]
-	b = append(b, []byte{0x5d}...) // pop bp
-	b = append(b, []byte{0xc3}...) // ret
-	b = append(b, []byte{0x55}...) // push bp
-	b = append(b, []byte{0x8b, 0xec}...) // mov bp,sp
-	b = append(b, []byte{0xba, 0x07, 0x4c}...) // mov dx,0x4c07
-	b = append(b, []byte{0x52}...) // push dx
-	b = append(b, []byte{0xe8, 0xee, 0xff}...) // call near ptr f
-	b = append(b, []byte{0x8b, 0xe5}...) // mov sp,bp
-	b = append(b, []byte{0x5d}...) // pop bp
-	b = append(b, []byte{0xcd, 0x21}...) // int 21h
-
-	intHandlers := make(intHandlers)
-
-	actual, err := runExeWithCustomIntHandlers(bytes.NewReader(b), intHandlers)
+	exitCode, _, err := RunExe(file)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	if actual.exitCode != 7 {
-		t.Errorf("expect %d but actual %d", 7, actual.exitCode)
+	if exitCode != 7 {
+		t.Errorf("expect exitCode to be %d but actual %d", 7, exitCode)
+	}
+}
+
+func TestRunExeWithSampleFcallp(t *testing.T) {
+	file, err := os.Open("sample/fcallp.exe")
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	exitCode, _, err := RunExe(file)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	if exitCode != 7 {
+		t.Errorf("expect exitCode to be %d but actual %d", 7, exitCode)
 	}
 }
 
@@ -671,14 +640,11 @@ func TestRunExeWithSampleCmain(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-
-	intHandlers := make(intHandlers)
-
-	actual, err := runExeWithCustomIntHandlers(file, intHandlers)
+	exitCode, _, err := RunExe(file)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	if actual.exitCode != 0 {
-		t.Errorf("expect %d but actual %d", 0, actual.exitCode)
+	if exitCode != 0 {
+		t.Errorf("expect exitCode to be %d but actual %d", 0, exitCode)
 	}
 }
