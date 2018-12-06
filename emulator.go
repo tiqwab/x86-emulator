@@ -439,6 +439,11 @@ type instAdd struct {
 	imm uint8
 }
 
+type instSub struct {
+	dest registerW
+	imm uint8
+}
+
 type instLea struct {
 	dest registerW
 	address word
@@ -547,6 +552,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		inst = instPop{dest: DI}
 
 	// add r/m16, imm8
+	// 83 /5 -> sub r/m16, imm8
 	case 0x83:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
 		currentAddress++
@@ -557,23 +563,48 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		if mod != 3 {
 			return nil, -1, errors.Errorf("expect mod is 0b11 but %02b", mod)
 		}
-		if reg != 0 {
-			return nil, -1, errors.Errorf("expect reg is /0 but %d", reg)
-		}
+		switch reg {
+		// add
+		case 0:
+			imm, err := memory.readByte(currentAddress)
+			currentAddress++
+			if err != nil {
+				return inst, -1, errors.Wrap(err, "failed to parse imm")
+			}
 
-		imm, err := memory.readByte(currentAddress)
-		currentAddress++
-		if err != nil {
-			return inst, -1, errors.Wrap(err, "failed to parse imm")
-		}
-
-		switch rm {
-		case AX:
-			inst = instAdd{dest: AX, imm: imm}
-		case CX:
-			inst = instAdd{dest: CX, imm: imm}
+			switch rm {
+			case AX:
+				inst = instAdd{dest: AX, imm: imm}
+			case DX:
+				inst = instAdd{dest: DX, imm: imm}
+			case CX:
+				inst = instAdd{dest: CX, imm: imm}
+			case SP:
+				inst = instAdd{dest: SP, imm: imm}
+			default:
+				return nil, -1, errors.Errorf("unknown register: %d", rm)
+			}
+		// sub
+		case 5:
+			imm, err := memory.readByte(currentAddress)
+			currentAddress++
+			if err != nil {
+				return inst, -1, errors.Wrap(err, "failed to decode sub inst")
+			}
+			switch rm {
+			case AX:
+				inst = instSub{dest: AX, imm: imm}
+			case DX:
+				inst = instSub{dest: DX, imm: imm}
+			case CX:
+				inst = instSub{dest: CX, imm: imm}
+			case SP:
+				inst = instSub{dest: SP, imm: imm}
+			default:
+				return nil, -1, errors.Errorf("unknown register: %d", rm)
+			}
 		default:
-			return nil, -1, errors.Errorf("unknown register: %d", rm)
+			return nil, -1, errors.Errorf("expect reg is 0 but %d", reg)
 		}
 
 	// 8b /r (/r indicates that the ModR/M byte of the instruction contains a register operand and an r/m operand)
@@ -1009,8 +1040,28 @@ func execAdd(inst instAdd, state state) (state, error) {
 	switch inst.dest {
 	case AX:
 		state.ax += word(inst.imm)
+	case DX:
+		state.dx += word(inst.imm)
 	case CX:
 		state.cx += word(inst.imm)
+	case SP:
+		state.sp += word(inst.imm)
+	default:
+		return state, errors.Errorf("unknown register: %v", inst.dest)
+	}
+	return state, nil
+}
+
+func execSub(inst instSub, state state) (state, error) {
+	switch inst.dest {
+	case AX:
+		state.ax -= word(inst.imm)
+	case DX:
+		state.dx -= word(inst.imm)
+	case CX:
+		state.cx -= word(inst.imm)
+	case SP:
+		state.sp -= word(inst.imm)
 	default:
 		return state, errors.Errorf("unknown register: %v", inst.dest)
 	}
@@ -1103,6 +1154,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory) (state, erro
 		return execShl(inst, state)
 	case instAdd:
 		return execAdd(inst, state)
+	case instSub:
+		return execSub(inst, state)
 	case instLea:
 		return execLea(inst, state)
 	case instInt:

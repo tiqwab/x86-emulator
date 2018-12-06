@@ -263,6 +263,19 @@ func TestDecodeAddCX(t *testing.T) {
 	}
 }
 
+func TestDecodeSubAXImm(t *testing.T) {
+	// sub ax,2
+	var reader io.Reader = bytes.NewReader([]byte{0x83, 0xec, 0x02})
+	actual, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instSub{dest: SP, imm: 0x0002}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 func TestDecodeMovDs(t *testing.T) {
 	// mov ds,ax
 	var reader io.Reader = bytes.NewReader([]byte{0x8e, 0xd8})
@@ -650,5 +663,22 @@ func TestFunctionCallWithParameter(t *testing.T) {
 	}
 	if actual.exitCode != 7 {
 		t.Errorf("expect %d but actual %d", 7, actual.exitCode)
+	}
+}
+
+func TestRunExeWithSampleCmain(t *testing.T) {
+	file, err := os.Open("sample/cmain.exe")
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+
+	intHandlers := make(intHandlers)
+
+	actual, err := runExeWithCustomIntHandlers(file, intHandlers)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	if actual.exitCode != 0 {
+		t.Errorf("expect %d but actual %d", 0, actual.exitCode)
 	}
 }
