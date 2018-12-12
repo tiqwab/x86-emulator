@@ -661,3 +661,17 @@ func TestRunExeWithSampleCmain(t *testing.T) {
 		t.Errorf("expect exitCode to be %d but actual %d", 0, exitCode)
 	}
 }
+
+/*
+func TestRunExeWithSampleCmain2(t *testing.T) {
+	file, err := os.Open("sample/cmain2.exe")
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	debug = debugT(true)
+	_, _, err = RunExe(file)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+}
+*/

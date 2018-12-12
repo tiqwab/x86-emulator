@@ -8,6 +8,7 @@ import (
 	"github.com/pkg/errors"
 	"io"
 	"io/ioutil"
+	"log"
 )
 
 // ref1. https://en.wikibooks.org/wiki/X86_Assembly/Machine_Language_Conversion
@@ -16,6 +17,15 @@ import (
 const (
 	paragraphSize int = 16
 )
+
+// for debug log
+type debugT bool
+var debug = debugT(false)
+func (d debugT) printf(format string, args ...interface{}) {
+	if d {
+		log.Printf(format, args...)
+	}
+}
 
 type word uint16
 type exitCode uint8
@@ -1213,6 +1223,7 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 				return state{}, errors.Wrap(err, "error to decode inst")
 			}
 		}
+		debug.printf("decode inst %#v at 0x%04x:0x%04x\n", inst, s.cs, s.ip)
 
 		s.ip = s.ip + word(readBytesCount)
 		s, err = execute(inst, s, memory)
