@@ -422,6 +422,19 @@ func TestDecodeMovWithDisp(t *testing.T) {
 	}
 }
 
+func TestDecodeJmpRel16(t *testing.T) {
+	// jmp rel16
+	var reader io.Reader = bytes.NewReader([]byte{0xe9, 0x8a, 0x00})
+	actual, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instJmpRel16{rel: 0x008a}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 // run
 
 func (code machineCode) withMov() machineCode {

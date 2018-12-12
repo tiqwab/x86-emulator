@@ -465,6 +465,10 @@ type instRet struct {
 
 }
 
+type instJmpRel16 struct {
+	rel int16
+}
+
 func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
 	buf, err := memory.readByte(at)
 	if err != nil {
@@ -784,6 +788,15 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			return inst, -1, errors.Wrap(err, "failed to parse int16")
 		}
 		inst = instCall{rel: rel}
+
+	// jmp rel16
+	case 0xe9:
+		rel, err := memory.readInt16(currentAddress)
+		currentAddress += 2
+		if err != nil {
+			return inst, -1, errors.Wrap(err, "failed to parse int16")
+		}
+		inst = instJmpRel16{rel: rel}
 
 	default:
 		return inst, -1, errors.Errorf("unknown opcode: 0x%02x", rawOpcode)
@@ -1138,6 +1151,11 @@ func execRet(inst instRet, state state, memory *memory) (state, error) {
 	return state, nil
 }
 
+func execJmpRel16(inst instJmpRel16, state state, memory *memory) (state, error) {
+	state.ip += word(int16(state.ip) + inst.rel)
+	return state, nil
+}
+
 func execute(shouldBeInst interface{}, state state, memory *memory) (state, error) {
 	switch inst := shouldBeInst.(type) {
 	case instMov:
@@ -1168,6 +1186,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory) (state, erro
 		return execCall(inst, state, memory)
 	case instRet:
 		return execRet(inst, state, memory)
+	case instJmpRel16:
+		return execJmpRel16(inst, state, memory)
 	default:
 		return state, errors.Errorf("unknown inst: %T", shouldBeInst)
 	}
