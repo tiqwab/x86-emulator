@@ -1162,7 +1162,7 @@ func execRet(inst instRet, state state, memory *memory) (state, error) {
 }
 
 func execJmpRel16(inst instJmpRel16, state state, memory *memory) (state, error) {
-	state.ip += word(int16(state.ip) + inst.rel)
+	state.ip = word(int16(state.ip) + inst.rel)
 	return state, nil
 }
 
