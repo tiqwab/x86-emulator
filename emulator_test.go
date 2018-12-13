@@ -448,6 +448,19 @@ func TestDecodeSti(t *testing.T) {
 	}
 }
 
+func TestDecodeAndReg8Imm8(t *testing.T) {
+	// and r/m8 imm8
+	var reader io.Reader = bytes.NewReader([]byte{0x80, 0xe3, 0xf0})
+	actual, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instAndReg8Imm8{reg: BL, imm8: 0xf0}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 // run
 
 func (code machineCode) withMov() machineCode {

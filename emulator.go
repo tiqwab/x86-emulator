@@ -483,6 +483,11 @@ type instSti struct {
 
 }
 
+type instAndReg8Imm8 struct {
+	reg registerB
+	imm8 uint8
+}
+
 func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
 	buf, err := memory.readByte(at)
 	if err != nil {
@@ -569,6 +574,34 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	case 0x5f:
 		inst = instPop{dest: DI}
 
+	// and r/m8, imm8
+	case 0x80:
+		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		currentAddress++
+		if err != nil {
+			return inst, -1, errors.Wrap(err, "failed to decode mod/reg/rm")
+		}
+
+		if reg != 4 {
+			return nil, -1, errors.Errorf("expect reg is %d but %d", 4, reg)
+		}
+
+		if mod != 3 {
+			return nil, -1, errors.Errorf("expect mod is %d but %d", 3, mod)
+		}
+
+		imm, err := memory.readByte(currentAddress)
+		currentAddress++
+		if err != nil {
+			return inst, -1, errors.Wrap(err, "failed to parse imm")
+		}
+
+		regB, err := toRegisterB(uint8(rm))
+		if err != nil {
+			return inst, -1, errors.Wrap(err, "unknown register")
+		}
+		inst = instAndReg8Imm8{reg: regB, imm8: imm}
+
 	// add r/m16, imm8
 	// 83 /5 -> sub r/m16, imm8
 	case 0x83:
@@ -593,10 +626,12 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			switch rm {
 			case AX:
 				inst = instAdd{dest: AX, imm: imm}
-			case DX:
-				inst = instAdd{dest: DX, imm: imm}
 			case CX:
 				inst = instAdd{dest: CX, imm: imm}
+			case DX:
+				inst = instAdd{dest: DX, imm: imm}
+			case BX:
+				inst = instAdd{dest: BX, imm: imm}
 			case SP:
 				inst = instAdd{dest: SP, imm: imm}
 			default:
@@ -749,6 +784,14 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			return inst, -1, errors.Wrap(err, "failed to decode imm")
 		}
 		inst = instMov{dest: DX, imm: imm}
+	case 0xbb:
+		// bx
+		imm, err := memory.readWord(currentAddress)
+		currentAddress += 2
+		if err != nil {
+			return inst, -1, errors.Wrap(err, "failed to decode imm")
+		}
+		inst = instMov{dest: BX, imm: imm}
 
 	// shl r/m16,imm8
 	// FIXME: handle memory address as source
@@ -854,7 +897,7 @@ func intHandler09(s *state, memory *memory) error {
 
 // FIXME: Type general registers, segment registers respectively
 type state struct {
-	ax, cx, dx, bx, sp, bp, si, di, ss, cs, ip, ds word
+	ax, cx, dx, bx, sp, bp, si, di, ss, cs, ip, ds, es word
 	exitCode                   exitCode
 	shouldExit                 bool
 	intHandlers                intHandlers
@@ -894,6 +937,18 @@ func (s state) al() uint8 {
 	return uint8(s.ax & 0x00ff)
 }
 
+func (s state) cl() uint8 {
+	return uint8(s.cx & 0x00ff)
+}
+
+func (s state) dl() uint8 {
+	return uint8(s.dx & 0x00ff)
+}
+
+func (s state) bl() uint8 {
+	return uint8(s.bx & 0x00ff)
+}
+
 func (s state) ah() uint8 {
 	return uint8(s.ax >> 8)
 }
@@ -926,6 +981,21 @@ func (s state) readWordGeneralReg(r registerW) (word, error) {
 		return s.di, nil
 	default:
 		return 0, errors.Errorf("illegal registerW or not implemented: %d", r)
+	}
+}
+
+func (s state) readByteGeneralReg(r registerB) (uint8, error) {
+	switch r {
+	case AL:
+		return s.al(), nil
+	case CL:
+		return s.cl(), nil
+	case DL:
+		return s.dl(), nil
+	case BL:
+		return s.bl(), nil
+	default:
+		return 0, errors.Errorf("illegal registerB or not implemented: %d", r)
 	}
 }
 
@@ -986,6 +1056,8 @@ func execMov(inst instMov, state state) (state, error) {
 		state.cx = inst.imm
 	case DX:
 		state.dx = inst.imm
+	case BX:
+		state.bx = inst.imm
 	default:
 		return state, errors.Errorf("unknown register: %v", inst.dest)
 	}
@@ -1026,6 +1098,12 @@ func execMovRegReg(inst instMovRegReg, state state) (state, error) {
 
 func execMovSRegReg(inst instMovSRegReg, state state) (state, error) {
 	switch inst.dest {
+	case ES:
+		v, err := state.readWordGeneralReg(inst.src)
+		if err != nil {
+			return state, errors.Wrap(err, "failed to get reg")
+		}
+		state.es = v
 	case DS:
 		v, err := state.readWordGeneralReg(inst.src)
 		if err != nil {
@@ -1061,6 +1139,10 @@ func execShl(inst instShl, state state) (state, error) {
 		state.ax <<= inst.imm
 	case CX:
 		state.cx <<= inst.imm
+	case DX:
+		state.dx <<= inst.imm
+	case BX:
+		state.bx <<= inst.imm
 	default:
 		return state, errors.Errorf("unknown register: %v", inst.register)
 	}
@@ -1071,10 +1153,12 @@ func execAdd(inst instAdd, state state) (state, error) {
 	switch inst.dest {
 	case AX:
 		state.ax += word(inst.imm)
-	case DX:
-		state.dx += word(inst.imm)
 	case CX:
 		state.cx += word(inst.imm)
+	case DX:
+		state.dx += word(inst.imm)
+	case BX:
+		state.bx += word(inst.imm)
 	case SP:
 		state.sp += word(inst.imm)
 	default:
@@ -1179,6 +1263,22 @@ func execSti(inst instSti, state state, memory *memory) (state, error) {
 	return state, nil
 }
 
+func execAndReg8Imm8(inst instAndReg8Imm8, state state, memory *memory) (state, error) {
+	switch inst.reg {
+	case AL:
+		state.ax &= word(uint16(0xff << 8) + uint16(inst.imm8))
+	case CL:
+		state.cx &= word(uint16(0xff << 8) + uint16(inst.imm8))
+	case DL:
+		state.dx &= word(uint16(0xff << 8) + uint16(inst.imm8))
+	case BL:
+		state.bx &= word(uint16(0xff << 8) + uint16(inst.imm8))
+	default:
+		return state, errors.Errorf("unknown register: %v", inst.reg)
+	}
+	return state, nil
+}
+
 func execute(shouldBeInst interface{}, state state, memory *memory) (state, error) {
 	switch inst := shouldBeInst.(type) {
 	case instMov:
@@ -1213,6 +1313,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory) (state, erro
 		return execJmpRel16(inst, state, memory)
 	case instSti:
 		return execSti(inst, state, memory)
+	case instAndReg8Imm8:
+		return execAndReg8Imm8(inst, state, memory)
 	default:
 		return state, errors.Errorf("unknown inst: %T", shouldBeInst)
 	}
@@ -1248,6 +1350,7 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		if s.shouldExit {
 			break
 		}
+		debug.printf("0x%04x\n", s.bx)
 	}
 
 	return s, nil
