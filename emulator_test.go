@@ -175,7 +175,7 @@ func TestInitialization(t *testing.T) {
 func TestDecodeInstInt(t *testing.T) {
 	// int 21
 	var reader io.Reader = bytes.NewReader([]byte{0xcd, 0x21})
-	actual, _, err := decodeInst(reader)
+	actual, _, _, err := decodeInst(reader)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
@@ -188,7 +188,7 @@ func TestDecodeInstInt(t *testing.T) {
 func TestDecodeMovAX(t *testing.T) {
 	// mov ax,1
 	var reader io.Reader = bytes.NewReader([]byte{0xb8, 0x01, 0x00})
-	actual, _, err := decodeInst(reader)
+	actual, _, _, err := decodeInst(reader)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
@@ -201,7 +201,7 @@ func TestDecodeMovAX(t *testing.T) {
 func TestDecodeMovCX(t *testing.T) {
 	// mov cx,1
 	var reader io.Reader = bytes.NewReader([]byte{0xb9, 0x01, 0x00})
-	actual, _, err := decodeInst(reader)
+	actual, _, _, err := decodeInst(reader)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
@@ -214,7 +214,7 @@ func TestDecodeMovCX(t *testing.T) {
 func TestDecodeShlAX(t *testing.T) {
 	// shl ax,1
 	var reader io.Reader = bytes.NewReader([]byte{0xc1, 0xe0, 0x01})
-	actual, _, err := decodeInst(reader)
+	actual, _, _, err := decodeInst(reader)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
@@ -227,7 +227,7 @@ func TestDecodeShlAX(t *testing.T) {
 func TestDecodeShlCX(t *testing.T) {
 	// shl cx,1
 	var reader io.Reader = bytes.NewReader([]byte{0xc1, 0xe1, 0x01})
-	actual, _, err := decodeInst(reader)
+	actual, _, _, err := decodeInst(reader)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
@@ -240,7 +240,7 @@ func TestDecodeShlCX(t *testing.T) {
 func TestDecodeAddAX(t *testing.T) {
 	// add ax,1
 	var reader io.Reader = bytes.NewReader([]byte{0x83, 0xc0, 0x01})
-	actual, _, err := decodeInst(reader)
+	actual, _, _, err := decodeInst(reader)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
@@ -253,7 +253,7 @@ func TestDecodeAddAX(t *testing.T) {
 func TestDecodeAddCX(t *testing.T) {
 	// add ax,1
 	var reader io.Reader = bytes.NewReader([]byte{0x83, 0xc1, 0x01})
-	actual, _, err := decodeInst(reader)
+	actual, _, _, err := decodeInst(reader)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
@@ -266,7 +266,7 @@ func TestDecodeAddCX(t *testing.T) {
 func TestDecodeSubAXImm(t *testing.T) {
 	// sub ax,2
 	var reader io.Reader = bytes.NewReader([]byte{0x83, 0xec, 0x02})
-	actual, _, err := decodeInst(reader)
+	actual, _, _, err := decodeInst(reader)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
@@ -279,7 +279,7 @@ func TestDecodeSubAXImm(t *testing.T) {
 func TestDecodeMovDs(t *testing.T) {
 	// mov ds,ax
 	var reader io.Reader = bytes.NewReader([]byte{0x8e, 0xd8})
-	actual, _, err := decodeInst(reader)
+	actual, _, _, err := decodeInst(reader)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
@@ -292,7 +292,7 @@ func TestDecodeMovDs(t *testing.T) {
 func TestDecodeMovAh(t *testing.T) {
 	// mov ah,09h
 	var reader io.Reader = bytes.NewReader([]byte{0xb4, 0x09})
-	actual, _, err := decodeInst(reader)
+	actual, _, _, err := decodeInst(reader)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
@@ -305,7 +305,7 @@ func TestDecodeMovAh(t *testing.T) {
 func TestDecodeLeaDx(t *testing.T) {
 	// lea dx,msg
 	var reader io.Reader = bytes.NewReader([]byte{0x8d, 0x16, 0x02, 0x00}) // 0b00010110
-	actual, _, err := decodeInst(reader)
+	actual, _, _, err := decodeInst(reader)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
@@ -339,7 +339,7 @@ func TestDecodePushGeneralRegisters(t *testing.T) {
 	}
 
 	for i := 0; i < len(readers); i++ {
-		actual, _, err := decodeInst(readers[i])
+		actual, _, _, err := decodeInst(readers[i])
 		if err != nil {
 			t.Errorf("%+v", err)
 		}
@@ -373,7 +373,7 @@ func TestDecodePopGeneralRegisters(t *testing.T) {
 	}
 
 	for i := 0; i < len(readers); i++ {
-		actual, _, err := decodeInst(readers[i])
+		actual, _, _, err := decodeInst(readers[i])
 		if err != nil {
 			t.Errorf("%+v", err)
 		}
@@ -386,7 +386,7 @@ func TestDecodePopGeneralRegisters(t *testing.T) {
 func TestDecodeCall(t *testing.T) {
 	// call rel16
 	var reader io.Reader = bytes.NewReader([]byte{0xe8, 0xdc, 0xff})
-	actual, _, err := decodeInst(reader)
+	actual, _, _, err := decodeInst(reader)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
@@ -399,7 +399,7 @@ func TestDecodeCall(t *testing.T) {
 func TestDecodeRet(t *testing.T) {
 	// ret (near return)
 	var reader io.Reader = bytes.NewReader([]byte{0xc3})
-	actual, _, err := decodeInst(reader)
+	actual, _, _, err := decodeInst(reader)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
@@ -412,7 +412,7 @@ func TestDecodeRet(t *testing.T) {
 func TestDecodeMovWithDisp(t *testing.T) {
 	// mov ax,[bp+4]
 	var reader io.Reader = bytes.NewReader([]byte{0x8b, 0x46, 0x04})
-	actual, _, err := decodeInst(reader)
+	actual, _, _, err := decodeInst(reader)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
@@ -425,7 +425,7 @@ func TestDecodeMovWithDisp(t *testing.T) {
 func TestDecodeJmpRel16(t *testing.T) {
 	// jmp rel16
 	var reader io.Reader = bytes.NewReader([]byte{0xe9, 0x8a, 0x00})
-	actual, _, err := decodeInst(reader)
+	actual, _, _, err := decodeInst(reader)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
@@ -438,7 +438,7 @@ func TestDecodeJmpRel16(t *testing.T) {
 func TestDecodeSti(t *testing.T) {
 	// sti
 	var reader io.Reader = bytes.NewReader([]byte{0xfb})
-	actual, _, err := decodeInst(reader)
+	actual, _, _, err := decodeInst(reader)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
@@ -451,11 +451,37 @@ func TestDecodeSti(t *testing.T) {
 func TestDecodeAndReg8Imm8(t *testing.T) {
 	// and r/m8 imm8
 	var reader io.Reader = bytes.NewReader([]byte{0x80, 0xe3, 0xf0})
-	actual, _, err := decodeInst(reader)
+	actual, _, _, err := decodeInst(reader)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
 	expected := instAndReg8Imm8{reg: BL, imm8: 0xf0}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
+func TestDecodeMovMem16Reg16WithSegmentOverride(t *testing.T) {
+	// mov word ptr es:0038, bx
+	var reader io.Reader = bytes.NewReader([]byte{0x26, 0x89, 0x1e, 0x38, 0x00})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instMovMem16Reg16{offset: 0x0038, src: BX}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
+func TestDecodeMovReg16Mem16WithSegmentOverride(t *testing.T) {
+	// mov word ptr es:0038, bx
+	var reader io.Reader = bytes.NewReader([]byte{0x26, 0x8b, 0x16, 0xb0, 0x00})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instMovReg16Mem16{dest: DX, offset: 0x00b0}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
@@ -685,6 +711,24 @@ func TestRunExeWithSampleCmain(t *testing.T) {
 	}
 	if exitCode != 0 {
 		t.Errorf("expect exitCode to be %d but actual %d", 0, exitCode)
+	}
+}
+
+// check segment override
+func TestRunExeWithSampleSgor(t *testing.T) {
+	file, err := os.Open("sample/sgor.exe")
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	exitCode, state, err := RunExe(file)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	if exitCode != 0 {
+		t.Errorf("expect exitCode to be %d but actual %d", 0, exitCode)
+	}
+	if state.dx != 0x0370 {
+		t.Errorf("expect dx as 0x%04x but actual 0x%04x", 0x0370, state.dx)
 	}
 }
 
