@@ -502,6 +502,11 @@ type instMovReg16Mem16 struct {
 	offset word
 }
 
+type instMovMem16Sreg struct {
+	offset word
+	src registerS
+}
+
 func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
 	buf, err := memory.readByte(at)
 	if err != nil {
@@ -761,6 +766,36 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 				}
 				currentAddress += 2
 				inst = instMovReg16Mem16{dest: dest, offset: offset}
+			default:
+				return inst, -1, nil, errors.Errorf("not yet implmeneted for rm %d", rm)
+			}
+		} else {
+			return inst, -1, nil, errors.Errorf("not yet implemented for mod 0x%02x", mod)
+		}
+
+	// 8c /r
+	// mov r/m16,Sreg
+	case 0x8c:
+		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		currentAddress++
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
+		}
+
+		if mod == 0 {
+			src, err := toRegisterS(reg)
+			if err != nil {
+				return inst, -1, nil, errors.Errorf("illegal reg vlue for registerS: %d", reg)
+			}
+
+			switch rm {
+			case 6:
+				offset, err := memory.readWord(currentAddress)
+				if err != nil {
+					return inst, -1, nil, errors.Wrap(err, "failed to parse word")
+				}
+				currentAddress += 2
+				inst = instMovMem16Sreg{offset: offset, src: src}
 			default:
 				return inst, -1, nil, errors.Errorf("not yet implmeneted for rm %d", rm)
 			}
@@ -1065,6 +1100,27 @@ func (s state) readByteGeneralReg(r registerB) (uint8, error) {
 		return s.bl(), nil
 	default:
 		return 0, errors.Errorf("illegal registerB or not implemented: %d", r)
+	}
+}
+
+func (s state) readWordSreg(r registerS) (word, error) {
+	switch r {
+	case ES:
+		return s.es, nil
+	case CS:
+		return s.cs, nil
+	case SS:
+		return s.ss, nil
+	case DS:
+		return s.ds, nil
+		/*
+	case FS:
+		return s.fs, nil
+	case GS:
+		return s.gs, nil
+		*/
+	default:
+		return 0, errors.Errorf("illegal number for registerS:%d", r)
 	}
 }
 
@@ -1398,6 +1454,31 @@ func execMovReg16Mem16(inst instMovReg16Mem16, state state, memory *memory, segm
 	return state, nil
 }
 
+func execMovMem16Sreg(inst instMovMem16Sreg, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
+	initDS := state.ds
+	if segmentOverride != nil {
+		switch segmentOverride.sreg {
+		case ES:
+			state.ds = state.es
+		default:
+			return state, errors.Errorf("not yet implemented or illegal sreg: %#v", segmentOverride.sreg)
+		}
+	}
+
+	v, err := state.readWordSreg(inst.src)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execMovMem16Sreg")
+	}
+
+	err = memory.writeWord(state.realAddress(state.ds, inst.offset), v)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execMovMem16Sreg")
+	}
+
+	state.ds = initDS
+	return state, nil
+}
+
 func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
 	switch inst := shouldBeInst.(type) {
 	case instMov:
@@ -1438,6 +1519,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execMovMem16Reg16(inst, state, memory, segmentOverride)
 	case instMovReg16Mem16:
 		return execMovReg16Mem16(inst, state, memory, segmentOverride)
+	case instMovMem16Sreg:
+		return execMovMem16Sreg(inst, state, memory, segmentOverride)
 	default:
 		return state, errors.Errorf("unknown inst: %T", shouldBeInst)
 	}
@@ -1473,7 +1556,8 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		if s.shouldExit {
 			break
 		}
-		debug.printf("0x%04x\n", s.bx)
+		v, _ := memory.readWord(realAddress(s.es, 0x0032))
+		// debug.printf("0x%04x\n", v)
 	}
 
 	return s, nil
