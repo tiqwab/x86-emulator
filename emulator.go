@@ -507,6 +507,11 @@ type instMovMem16Sreg struct {
 	src registerS
 }
 
+type instAddReg16Reg16 struct {
+	dest registerW
+	src registerW
+}
+
 func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
 	buf, err := memory.readByte(at)
 	if err != nil {
@@ -543,6 +548,29 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	}
 
 	switch rawOpcode {
+	// add r16,r/m16
+	// 03 /r
+	case 0x03:
+		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		currentAddress++
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
+		}
+
+		if mod == 3 {
+			dest, err := toRegisterW(uint8(reg))
+			if err != nil {
+				return inst, -1, nil, errors.Errorf("illegal reg value for registerW: %d", reg)
+			}
+			src, err := toRegisterW(uint8(rm))
+			if err != nil {
+				return inst, -1, nil, errors.Errorf("illegal rm value for registerW: %d", rm)
+			}
+			inst = instAddReg16Reg16{dest: dest, src: src}
+		} else {
+			return inst, -1, nil, errors.Errorf("unknown or not implemented for mod %d", mod)
+		}
+
 	// segment override by ES
 	case 0x26:
 		inst, readBytes, _, err := decodeInstWithMemory(currentAddress, memory)
@@ -1479,6 +1507,22 @@ func execMovMem16Sreg(inst instMovMem16Sreg, state state, memory *memory, segmen
 	return state, nil
 }
 
+func execAddReg16Reg16(inst instAddReg16Reg16, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
+	srcValue, err := state.readWordGeneralReg(inst.src)
+	if err != nil {
+		return state, errors.Errorf("failed in execAddReg16Reg16")
+	}
+	destValue, err := state.readWordGeneralReg(inst.dest)
+	if err != nil {
+		return state, errors.Errorf("failed in execAddReg16Reg16")
+	}
+	state, err = state.writeWordGeneralReg(inst.dest, (srcValue + destValue))
+	if err != nil {
+		return state, errors.Errorf("failed in execAddReg16Reg16")
+	}
+	return state, nil
+}
+
 func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
 	switch inst := shouldBeInst.(type) {
 	case instMov:
@@ -1521,6 +1565,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execMovReg16Mem16(inst, state, memory, segmentOverride)
 	case instMovMem16Sreg:
 		return execMovMem16Sreg(inst, state, memory, segmentOverride)
+	case instAddReg16Reg16:
+		return execAddReg16Reg16(inst, state, memory, segmentOverride)
 	default:
 		return state, errors.Errorf("unknown inst: %T", shouldBeInst)
 	}
@@ -1556,7 +1602,7 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		if s.shouldExit {
 			break
 		}
-		v, _ := memory.readWord(realAddress(s.es, 0x0032))
+		// v := s.bx
 		// debug.printf("0x%04x\n", v)
 	}
 
