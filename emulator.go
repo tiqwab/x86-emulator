@@ -28,6 +28,7 @@ func (d debugT) printf(format string, args ...interface{}) {
 }
 
 type word uint16
+type dword uint32
 type exitCode uint8
 
 type segmentOverride struct {
@@ -517,6 +518,11 @@ type instShrReg16Imm struct {
 	imm word
 }
 
+type instCmpMem8Imm8 struct {
+	offset word
+	imm8 int8
+}
+
 func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
 	buf, err := memory.readByte(at)
 	if err != nil {
@@ -634,7 +640,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	case 0x5f:
 		inst = instPop{dest: DI}
 
-	// and r/m8, imm8
 	case 0x80:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
 		currentAddress++
@@ -642,25 +647,54 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
 
-		if reg != 4 {
-			return nil, -1, nil, errors.Errorf("expect reg is %d but %d", 4, reg)
-		}
+		switch reg {
+		// and r/m8, imm8
+		case 4:
+			if mod != 3 {
+				return nil, -1, nil, errors.Errorf("expect mod is %d but %d", 3, mod)
+			}
 
-		if mod != 3 {
-			return nil, -1, nil, errors.Errorf("expect mod is %d but %d", 3, mod)
-		}
+			imm, err := memory.readByte(currentAddress)
+			currentAddress++
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to parse imm")
+			}
 
-		imm, err := memory.readByte(currentAddress)
-		currentAddress++
-		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to parse imm")
-		}
+			regB, err := toRegisterB(uint8(rm))
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "unknown register")
+			}
 
-		regB, err := toRegisterB(uint8(rm))
-		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "unknown register")
+			inst = instAndReg8Imm8{reg: regB, imm8: imm}
+
+		// cmp r/m8,imm8
+		// 80 /7 ib
+		case 7:
+			if mod != 0 {
+				return nil, -1, nil, errors.Errorf("expected mod is %d but %d", 0, mod)
+			}
+
+			if rm != 6 {
+				return nil, -1, nil, errors.Errorf("expected rm is %d but %d", 6, rm)
+			}
+
+			word, err := memory.readWord(currentAddress)
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to parse word")
+			}
+			currentAddress += 2
+
+			imm, err := memory.readInt8(currentAddress)
+			currentAddress++
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to parse imm")
+			}
+
+			inst = instCmpMem8Imm8{offset: word, imm8: imm}
+
+		default:
+			return nil, -1, nil, errors.Errorf("unknown reg: %d", reg)
 		}
-		inst = instAndReg8Imm8{reg: regB, imm8: imm}
 
 	// add r/m16, imm8
 	// 83 /5 -> sub r/m16, imm8
@@ -1058,10 +1092,15 @@ func intHandler09(s *state, memory *memory) error {
 // FIXME: Type general registers, segment registers respectively
 type state struct {
 	ax, cx, dx, bx, sp, bp, si, di, ss, cs, ip, ds, es word
+	eflags dword
 	exitCode                   exitCode
 	shouldExit                 bool
 	intHandlers                intHandlers
 }
+
+const (
+	EFLAGS_ZF = 0x00000040
+)
 
 func newState(header *header, customIntHandlers intHandlers) state {
 	// --- Prepare interrupted handlers
@@ -1561,6 +1600,30 @@ func execShrReg16Imm(inst instShrReg16Imm, state state) (state, error) {
 	return state, nil
 }
 
+func execInstCmpMem8Imm8(inst instCmpMem8Imm8, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
+	initDS := state.ds
+	if segmentOverride != nil {
+		switch segmentOverride.sreg {
+		case ES:
+			state.ds = state.es
+		default:
+			return state, errors.Errorf("not yet implemented or illegal sreg: %#v", segmentOverride.sreg)
+		}
+	}
+
+	v, err := memory.readInt8(state.realAddress(state.ds, inst.offset))
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstCmpMem8Imm8")
+	}
+
+	if v == inst.imm8 {
+		state.eflags |= EFLAGS_ZF
+	}
+
+	state.ds = initDS
+	return state, nil
+}
+
 func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
 	switch inst := shouldBeInst.(type) {
 	case instMov:
@@ -1607,6 +1670,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execAddReg16Reg16(inst, state)
 	case instShrReg16Imm:
 		return execShrReg16Imm(inst, state)
+	case instCmpMem8Imm8:
+		return execInstCmpMem8Imm8(inst, state, memory, segmentOverride)
 	default:
 		return state, errors.Errorf("unknown inst: %T", shouldBeInst)
 	}
@@ -1642,8 +1707,9 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		if s.shouldExit {
 			break
 		}
-		// v := s.dx
-		// debug.printf("0x%04x\n", v)
+		v, _ := memory.readInt8(s.realAddress(s.es, 0x36))
+		debug.printf("0x%04x\n", v)
+		debug.printf("0x%04x\n", s.eflags)
 	}
 
 	return s, nil

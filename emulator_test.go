@@ -526,6 +526,19 @@ func TestDecodeShlReg16_1(t *testing.T) {
 	}
 }
 
+func TestDecodeCmpWithSegmentOverride(t *testing.T) {
+	// cmp es:0036, 0x00
+	var reader io.Reader = bytes.NewReader([]byte{0x26, 0x80, 0x3e, 0x36, 0x00, 0x00})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instCmpMem8Imm8{offset: 0x0036, imm8: 0x00}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 // run
 
 func (code machineCode) withMov() machineCode {
