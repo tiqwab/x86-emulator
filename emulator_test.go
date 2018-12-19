@@ -539,6 +539,32 @@ func TestDecodeCmpWithSegmentOverride(t *testing.T) {
 	}
 }
 
+func TestDecodeJneRel8(t *testing.T) {
+	// jne 0x3d
+	var reader io.Reader = bytes.NewReader([]byte{0x75, 0x3d})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instJneRel8{rel8: 0x3d}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
+func TestDecodeMovReg16Sreg(t *testing.T) {
+	// mov ax,es
+	var reader io.Reader = bytes.NewReader([]byte{0x8c, 0xc0})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instMovReg16Sreg{dest: AX, src: ES}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 // run
 
 func (code machineCode) withMov() machineCode {
