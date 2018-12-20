@@ -542,6 +542,10 @@ type instCmpReg16Reg16 struct {
 	second registerW
 }
 
+type instJb struct {
+	rel8 int8
+}
+
 func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
 	buf, err := memory.readByte(at)
 	if err != nil {
@@ -706,6 +710,14 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// pop di
 	case 0x5f:
 		inst = instPop{dest: DI}
+
+	case 0x72:
+		offset, err := memory.readInt8(currentAddress)
+		currentAddress++
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
+		}
+		inst = instJb{rel8: offset}
 
 	// jne rel8
 	// 75 cb
@@ -1189,7 +1201,10 @@ type state struct {
 }
 
 const (
-	EFLAGS_ZF = 0x00000040
+	EFLAGS_ZF     = 0x00000040
+	EFLAGS_ZF_INV = 0xffffffbf
+	EFLAGS_CF     = 0x00000001
+	EFLAGS_CF_INV = 0xfffffffe
 )
 
 func newState(header *header, customIntHandlers intHandlers) state {
@@ -1709,6 +1724,16 @@ func execInstCmpMem8Imm8(inst instCmpMem8Imm8, state state, memory *memory, segm
 	if v == inst.imm8 {
 		state.eflags |= EFLAGS_ZF
 	}
+	if v == inst.imm8 {
+		state.eflags |= EFLAGS_ZF
+		state.eflags &= EFLAGS_CF_INV
+	} else if v < inst.imm8 {
+		state.eflags &= EFLAGS_ZF_INV
+		state.eflags |= EFLAGS_CF
+	} else {
+		state.eflags &= EFLAGS_ZF_INV
+		state.eflags &= EFLAGS_CF_INV
+	}
 
 	state.ds = initDS
 	return state, nil
@@ -1760,6 +1785,20 @@ func execInstCmpReg16Reg16(inst instCmpReg16Reg16, state state) (state, error) {
 	}
 	if firstV == secondV {
 		state.eflags |= EFLAGS_ZF
+		state.eflags &= EFLAGS_CF_INV
+	} else if firstV < secondV {
+		state.eflags &= EFLAGS_ZF_INV
+		state.eflags |= EFLAGS_CF
+	} else {
+		state.eflags &= EFLAGS_ZF_INV
+		state.eflags &= EFLAGS_CF_INV
+	}
+	return state, nil
+}
+
+func execInstJb(inst instJb, state state) (state, error) {
+	if state.eflags & EFLAGS_CF != 0 {
+		state.ip = word(int16(state.ip) + int16(inst.rel8))
 	}
 	return state, nil
 }
@@ -1820,6 +1859,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execInstSubReg16Reg16(inst, state)
 	case instCmpReg16Reg16:
 		return execInstCmpReg16Reg16(inst, state)
+	case instJb:
+		return execInstJb(inst, state)
 	default:
 		return state, errors.Errorf("unknown inst: %T", shouldBeInst)
 	}

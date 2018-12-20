@@ -591,6 +591,19 @@ func TestDecodeCmpReg16Reg16(t *testing.T) {
 	}
 }
 
+func TestDecodeJb(t *testing.T) {
+	// jb 0x0b
+	var reader io.Reader = bytes.NewReader([]byte{0x72, 0x0b})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instJb{rel8: 0x0b}
+	if actual != expected {
+		t.Errorf("expeted %v but actual %v", expected, actual)
+	}
+}
+
 // run
 
 func (code machineCode) withMov() machineCode {
