@@ -537,6 +537,11 @@ type instSubReg16Reg16 struct {
 	src registerW
 }
 
+type instCmpReg16Reg16 struct {
+	first registerW
+	second registerW
+}
+
 func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
 	buf, err := memory.readByte(at)
 	if err != nil {
@@ -624,6 +629,30 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 				return inst, -1, nil, errors.Wrap(err, "failed to parse as registerW")
 			}
 			inst = instSubReg16Reg16{dest: dest, src: src}
+		default:
+			return inst, -1, nil, errors.Errorf("unknown or not implemented for mod %d", mod)
+		}
+
+	// cmp r16,r/m16
+	// 3b /r
+	case 0x3b:
+		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		currentAddress++
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
+		}
+
+		switch mod {
+		case 3:
+			dest, err := toRegisterW(reg)
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to parse as registerW")
+			}
+			src, err := toRegisterW(uint8(rm))
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to parse as registerW")
+			}
+			inst = instCmpReg16Reg16{first: dest, second: src}
 		default:
 			return inst, -1, nil, errors.Errorf("unknown or not implemented for mod %d", mod)
 		}
@@ -1720,6 +1749,21 @@ func execInstSubReg16Reg16(inst instSubReg16Reg16, state state) (state, error) {
 	return state, nil
 }
 
+func execInstCmpReg16Reg16(inst instCmpReg16Reg16, state state) (state, error) {
+	firstV, err := state.readWordGeneralReg(inst.first)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstSubReg16Reg16")
+	}
+	secondV, err := state.readWordGeneralReg(inst.second)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstSubReg16Reg16")
+	}
+	if firstV == secondV {
+		state.eflags |= EFLAGS_ZF
+	}
+	return state, nil
+}
+
 func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
 	switch inst := shouldBeInst.(type) {
 	case instMov:
@@ -1774,6 +1818,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execInstMovReg16Sreg(inst, state)
 	case instSubReg16Reg16:
 		return execInstSubReg16Reg16(inst, state)
+	case instCmpReg16Reg16:
+		return execInstCmpReg16Reg16(inst, state)
 	default:
 		return state, errors.Errorf("unknown inst: %T", shouldBeInst)
 	}
@@ -1809,7 +1855,7 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		if s.shouldExit {
 			break
 		}
-		// v, _ := s.readWordGeneralReg(AX)
+		// v, _ := s.readWordGeneralReg(DX)
 		// debug.printf("0x%04x\n", v)
 		// v, _ = s.readWordGeneralReg(CX)
 		// debug.printf("0x%04x\n", v)
