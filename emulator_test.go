@@ -565,6 +565,19 @@ func TestDecodeMovReg16Sreg(t *testing.T) {
 	}
 }
 
+func TestSubReg16Reg16(t *testing.T) {
+	// sub cx,ax
+	var reader io.Reader = bytes.NewReader([]byte{0x2b, 0xc8})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instSubReg16Reg16{dest: CX, src: AX}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 // run
 
 func (code machineCode) withMov() machineCode {
