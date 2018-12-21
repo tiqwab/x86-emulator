@@ -1189,6 +1189,11 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 type intHandler func(*state, *memory) error
 type intHandlers map[uint8]intHandler
 
+func intHandler4a(s *state, memory *memory) error {
+	// do nothing for now
+	return nil
+}
+
 func intHandler4c(s *state, memory *memory) error {
 	s.exitCode = exitCode(s.al())
 	s.shouldExit = true
@@ -1239,18 +1244,19 @@ func newState(header *header, customIntHandlers intHandlers) state {
 		intHandlers[k] = v
 	}
 
+	// int 21 4ah
+	if _, ok := intHandlers[0x4a]; !ok {
+		intHandlers[0x4a] = intHandler4a
+	}
+
 	// int 21 4ch
 	if _, ok := intHandlers[0x4c]; !ok {
-		intHandlers[0x4c] = func(s *state, m *memory) error {
-			return intHandler4c(s, m)
-		}
+		intHandlers[0x4c] = intHandler4c
 	}
 
 	// int 21 09h
 	if _, ok := intHandlers[0x09]; !ok {
-		intHandlers[0x09] = func(s *state, m *memory) error {
-			return intHandler09(s, m)
-		}
+		intHandlers[0x09] = intHandler09
 	}
 
 	return state{
