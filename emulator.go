@@ -557,6 +557,10 @@ type instJb struct {
 	rel8 int8
 }
 
+type instCld struct {
+
+}
+
 func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
 	buf, err := memory.readByte(at)
 	if err != nil {
@@ -1301,6 +1305,10 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	case 0xfb:
 		inst = instSti{}
 
+	// cld
+	case 0xfc:
+		inst = instCld{}
+
 	default:
 		return inst, -1, nil, errors.Errorf("unknown opcode: 0x%02x", rawOpcode)
 	}
@@ -1356,6 +1364,8 @@ const (
 	EFLAGS_ZF_INV = 0xffffffbf
 	EFLAGS_CF     = 0x00000001
 	EFLAGS_CF_INV = 0xfffffffe
+	// EFLAGS_DF     = 0x00000200
+	EFLAGS_DF_INV = 0xfffffdff
 )
 
 func newState(header *header, customIntHandlers intHandlers) state {
@@ -2018,6 +2028,11 @@ func execInstJb(inst instJb, state state) (state, error) {
 	return state, nil
 }
 
+func execInstCld(inst instCld, state state) (state, error) {
+	state.eflags &= EFLAGS_DF_INV
+	return state, nil
+}
+
 func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
 	switch inst := shouldBeInst.(type) {
 	case instMov:
@@ -2080,6 +2095,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execInstCmpReg16Reg16(inst, state)
 	case instJb:
 		return execInstJb(inst, state)
+	case instCld:
+		return execInstCld(inst, state)
 	default:
 		return state, errors.Errorf("unknown inst: %T", shouldBeInst)
 	}

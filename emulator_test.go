@@ -643,6 +643,19 @@ func TestDecodeMovReg8WithDisp(t *testing.T) {
 	}
 }
 
+func TestDecodeCld(t *testing.T) {
+	// cld
+	var reader io.Reader = bytes.NewReader([]byte{0xfc})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instCld{}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 // run
 
 func (code machineCode) withMov() machineCode {
