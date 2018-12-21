@@ -513,14 +513,27 @@ func TestDecodeAddReg16Reg16(t *testing.T) {
 	}
 }
 
-func TestDecodeShlReg16_1(t *testing.T) {
-	// shl r/m16,1
+func TestDecodeShrReg16_1(t *testing.T) {
+	// shr r/m16,1
 	var reader io.Reader = bytes.NewReader([]byte{0xd1, 0xea})
 	actual, _, _, err := decodeInst(reader)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
 	expected := instShrReg16Imm{reg: DX, imm: 1}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
+func TestDecodeShlReg16_1(t *testing.T) {
+	// shl r/m16,1
+	var reader io.Reader = bytes.NewReader([]byte{0xd1, 0xe3})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instShlReg16Imm{reg: BX, imm: 1}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
