@@ -424,9 +424,9 @@ type instMov struct {
 	imm word
 }
 
-type instMovB struct {
+type instMovReg8Imm8 struct {
 	dest registerB
-	imm uint8
+	imm8 uint8
 }
 
 type instMovRegReg struct {
@@ -757,7 +757,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			imm, err := memory.readByte(currentAddress)
 			currentAddress++
 			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to parse imm")
+				return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
 			}
 
 			regB, err := toRegisterB(uint8(rm))
@@ -787,7 +787,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			imm, err := memory.readInt8(currentAddress)
 			currentAddress++
 			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to parse imm")
+				return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
 			}
 
 			inst = instCmpMem8Imm8{offset: word, imm8: imm}
@@ -814,7 +814,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			imm, err := memory.readByte(currentAddress)
 			currentAddress++
 			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to parse imm")
+				return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
 			}
 
 			switch rm {
@@ -1065,20 +1065,76 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		imm, err := memory.readWord(currentAddress)
 		currentAddress += 2
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
 		inst = instMovReg16Mem16{dest: AX, offset: imm}
 
 	// b0+ rb ib
 	// mov r8,imm8
+	case 0xb0:
+		// al
+		imm, err := memory.readByte(currentAddress)
+		currentAddress++
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
+		}
+		inst = instMovReg8Imm8{dest: AL, imm8: imm}
+	case 0xb1:
+		// cl
+		imm, err := memory.readByte(currentAddress)
+		currentAddress++
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
+		}
+		inst = instMovReg8Imm8{dest: CL, imm8: imm}
+	case 0xb2:
+		// dl
+		imm, err := memory.readByte(currentAddress)
+		currentAddress++
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
+		}
+		inst = instMovReg8Imm8{dest: DL, imm8: imm}
+	case 0xb3:
+		// bl
+		imm, err := memory.readByte(currentAddress)
+		currentAddress++
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
+		}
+		inst = instMovReg8Imm8{dest: BL, imm8: imm}
 	case 0xb4:
 		// ah
 		imm, err := memory.readByte(currentAddress)
 		currentAddress++
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
-		inst = instMovB{dest: AH, imm: imm}
+		inst = instMovReg8Imm8{dest: AH, imm8: imm}
+	case 0xb5:
+		// ch
+		imm, err := memory.readByte(currentAddress)
+		currentAddress++
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
+		}
+		inst = instMovReg8Imm8{dest: CH, imm8: imm}
+	case 0xb6:
+		// dh
+		imm, err := memory.readByte(currentAddress)
+		currentAddress++
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
+		}
+		inst = instMovReg8Imm8{dest: DH, imm8: imm}
+	case 0xb7:
+		// bh
+		imm, err := memory.readByte(currentAddress)
+		currentAddress++
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
+		}
+		inst = instMovReg8Imm8{dest: BH, imm8: imm}
 
 	// b8+ rw iw
 	// mov r16,imm16
@@ -1087,7 +1143,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		imm, err := memory.readWord(currentAddress)
 		currentAddress += 2
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
 		inst = instMov{dest: AX, imm: imm}
 	case 0xb9:
@@ -1095,7 +1151,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		imm, err := memory.readWord(currentAddress)
 		currentAddress += 2
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
 		inst = instMov{dest: CX, imm: imm}
 	case 0xba:
@@ -1103,7 +1159,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		imm, err := memory.readWord(currentAddress)
 		currentAddress += 2
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
 		inst = instMov{dest: DX, imm: imm}
 	case 0xbb:
@@ -1111,7 +1167,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		imm, err := memory.readWord(currentAddress)
 		currentAddress += 2
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
 		inst = instMov{dest: BX, imm: imm}
 	case 0xbc:
@@ -1119,7 +1175,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		imm, err := memory.readWord(currentAddress)
 		currentAddress += 2
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
 		inst = instMov{dest: SP, imm: imm}
 	case 0xbd:
@@ -1127,7 +1183,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		imm, err := memory.readWord(currentAddress)
 		currentAddress += 2
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
 		inst = instMov{dest: BP, imm: imm}
 	case 0xbe:
@@ -1135,7 +1191,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		imm, err := memory.readWord(currentAddress)
 		currentAddress += 2
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
 		inst = instMov{dest: SI, imm: imm}
 	case 0xbf:
@@ -1143,7 +1199,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		imm, err := memory.readWord(currentAddress)
 		currentAddress += 2
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
 		inst = instMov{dest: DI, imm: imm}
 
@@ -1166,7 +1222,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		imm, err := memory.readByte(currentAddress)
 		currentAddress++
 		if err != nil {
-			return nil, -1, nil, errors.Wrap(err, "failed to parse imm")
+			return nil, -1, nil, errors.Wrap(err, "failed to parse imm8")
 		}
 
 		switch rm {
@@ -1501,10 +1557,24 @@ func execMov(inst instMov, state state) (state, error) {
 	return state, nil
 }
 
-func execMovB(inst instMovB, state state) (state, error) {
+func execMovReg8Imm8(inst instMovReg8Imm8, state state) (state, error) {
 	switch inst.dest {
+	case AL:
+		state.ax = word(uint16(inst.imm8) + (0xff00) & uint16(state.ax))
+	case CL:
+		state.cx = word(uint16(inst.imm8) + (0xff00) & uint16(state.cx))
+	case DL:
+		state.dx = word(uint16(inst.imm8) + (0xff00) & uint16(state.dx))
+	case BL:
+		state.bx = word(uint16(inst.imm8) + (0xff00) & uint16(state.bx))
 	case AH:
-		state.ax = word((uint16(inst.imm) << 8) + (0x0011) & uint16(state.ax))
+		state.ax = word((uint16(inst.imm8) << 8) + (0x00ff) & uint16(state.ax))
+	case CH:
+		state.cx = word((uint16(inst.imm8) << 8) + (0x00ff) & uint16(state.cx))
+	case DH:
+		state.dx = word((uint16(inst.imm8) << 8) + (0x00ff) & uint16(state.dx))
+	case BH:
+		state.bx = word((uint16(inst.imm8) << 8) + (0x00ff) & uint16(state.bx))
 	default:
 		return state, errors.Errorf("unknown register: %v", inst.dest)
 	}
@@ -1952,8 +2022,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 	switch inst := shouldBeInst.(type) {
 	case instMov:
 		return execMov(inst, state)
-	case instMovB:
-		return execMovB(inst, state)
+	case instMovReg8Imm8:
+		return execMovReg8Imm8(inst, state)
 	case instMovRegReg:
 		return execMovRegReg(inst, state)
 	case instMovSRegReg:
@@ -2045,7 +2115,7 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		if s.shouldExit {
 			break
 		}
-		// v, _ := s.readWordGeneralReg(DI)
+		// v, _ := s.readWordGeneralReg(CX)
 		// debug.printf("0x%04x\n", v)
 	}
 
