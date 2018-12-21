@@ -617,6 +617,19 @@ func TestDecodeJb(t *testing.T) {
 	}
 }
 
+func TestDecodeMovAxMoffs16WithSegmentOverride(t *testing.T) {
+	// mov ax,word ptr es:0032
+	var reader io.Reader = bytes.NewReader([]byte{0x26, 0xa1, 0x32, 0x00})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instMovReg16Mem16{dest: AX, offset: 0x0032}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 // run
 
 func (code machineCode) withMov() machineCode {

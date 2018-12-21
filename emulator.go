@@ -1025,6 +1025,16 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			return inst, -1, nil, errors.Errorf("not yet implemented for mod 0x%02x", mod)
 		}
 
+	// mov ax,moffs16
+	// A1
+	case 0xa1:
+		imm, err := memory.readWord(currentAddress)
+		currentAddress += 2
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode imm")
+		}
+		inst = instMovReg16Mem16{dest: AX, offset: imm}
+
 	// b0+ rb ib
 	// mov r8,imm8
 	case 0xb4:
