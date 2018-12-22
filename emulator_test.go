@@ -604,6 +604,19 @@ func TestDecodeSubReg16Reg16(t *testing.T) {
 	}
 }
 
+func TestDecodeSubReg8Reg8(t *testing.T) {
+	// sub al,al
+	var reader io.Reader = bytes.NewReader([]byte{0x2a, 0xc0})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instSubReg8Reg8{dest: AL, src: AL}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 func TestDecodeCmpReg16Reg16(t *testing.T) {
 	// cmp dx,cx
 	var reader io.Reader = bytes.NewReader([]byte{0x3b, 0xd1})

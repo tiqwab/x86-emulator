@@ -562,6 +562,11 @@ type instSubReg16Reg16 struct {
 	src registerW
 }
 
+type instSubReg8Reg8 struct {
+	dest registerB
+	src registerB
+}
+
 type instCmpReg16Reg16 struct {
 	first registerW
 	second registerW
@@ -657,6 +662,30 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			return inst, -1, nil, errors.Wrap(err, "failed to decode")
 		}
 		return inst, readBytes + int(currentAddress - initialAddress), &segmentOverride{sreg: ES}, nil
+
+	// sub r8,r/m8
+	// 2a /r
+	case 0x2a:
+		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		currentAddress++
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
+		}
+
+		switch mod {
+		case 3:
+			dest, err := toRegisterB(reg)
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to parse as registerB")
+			}
+			src, err := toRegisterB(uint8(rm))
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to parse as registerB")
+			}
+			inst = instSubReg8Reg8{dest: dest, src: src}
+		default:
+			return inst, -1, nil, errors.Errorf("unknown or not implemented for mod %d", mod)
+		}
 
 	// sub r16,r/m16
 	// 2b /r
@@ -1652,8 +1681,24 @@ func (s state) readWordSreg(r registerS) (word, error) {
 
 func (s state) writeByteGeneralReg(r registerB, b uint8) (state, error) {
 	switch r {
+	case AL:
+		s.ax = (s.ax & 0xff00) | word(b)
 	case CL:
 		s.cx = (s.cx & 0xff00) | word(b)
+	case DL:
+		s.dx = (s.dx & 0xff00) | word(b)
+	case BL:
+		s.bx = (s.bx & 0xff00) | word(b)
+	case AH:
+		s.ax = (s.ax & 0x00ff) | word(b << 8)
+	case CH:
+		s.cx = (s.cx & 0x00ff) | word(b << 8)
+	case DH:
+		s.dx = (s.dx & 0x00ff) | word(b << 8)
+	case BH:
+		s.bx = (s.bx & 0x00ff) | word(b << 8)
+	default:
+		return s, errors.Errorf("illegal number for registerB: %d", r)
 	}
 	return s, nil
 }
@@ -2196,6 +2241,22 @@ func execInstSubReg16Reg16(inst instSubReg16Reg16, state state) (state, error) {
 	return state, nil
 }
 
+func execInstSubReg8Reg8(inst instSubReg8Reg8, state state) (state, error) {
+	srcV, err := state.readByteGeneralReg(inst.src)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstSubReg8Reg8")
+	}
+	destV, err := state.readByteGeneralReg(inst.dest)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstSubReg8Reg8")
+	}
+	state, err = state.writeByteGeneralReg(inst.dest, destV - srcV)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstSubReg8Reg8")
+	}
+	return state, nil
+}
+
 func execInstCmpReg16Reg16(inst instCmpReg16Reg16, state state) (state, error) {
 	firstV, err := state.readWordGeneralReg(inst.first)
 	if err != nil {
@@ -2432,6 +2493,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execInstMovReg16Sreg(inst, state)
 	case instSubReg16Reg16:
 		return execInstSubReg16Reg16(inst, state)
+	case instSubReg8Reg8:
+		return execInstSubReg8Reg8(inst, state)
 	case instCmpReg16Reg16:
 		return execInstCmpReg16Reg16(inst, state)
 	case instJb:
@@ -2481,7 +2544,7 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		if s.shouldExit {
 			break
 		}
-		// v, _ := s.readWordGeneralReg(CX)
+		// v, _ := s.readWordGeneralReg(AX)
 		// debug.printf("0x%04x\n", v)
 		// v, _ = s.readWordGeneralReg(SI)
 		// debug.printf("0x%04x\n", v)
