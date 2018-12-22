@@ -695,6 +695,19 @@ func TestDecodeJe(t *testing.T) {
 	}
 }
 
+func TestDecodeInc(t *testing.T) {
+	// inc cx
+	var reader io.Reader = bytes.NewReader([]byte{0x41})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instInc{dest: CX}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 // run
 
 func (code machineCode) withMov() machineCode {

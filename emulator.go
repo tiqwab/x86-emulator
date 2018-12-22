@@ -575,6 +575,10 @@ type instJeRel8 struct {
 	rel8 int8
 }
 
+type instInc struct {
+	dest registerW
+}
+
 func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
 	buf, err := memory.readByte(at)
 	if err != nil {
@@ -689,6 +693,31 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		default:
 			return inst, -1, nil, errors.Errorf("unknown or not implemented for mod %d", mod)
 		}
+
+	// inc ax
+	case 0x40:
+		inst = instInc{dest: AX}
+	// inc cx
+	case 0x41:
+		inst = instInc{dest: CX}
+	// inc dx
+	case 0x42:
+		inst = instInc{dest: DX}
+	// inc bx
+	case 0x43:
+		inst = instInc{dest: BX}
+	// inc sp
+	case 0x44:
+		inst = instInc{dest: SP}
+	// inc bp
+	case 0x45:
+		inst = instInc{dest: BP}
+	// inc si
+	case 0x46:
+		inst = instInc{dest: SI}
+	// inc di
+	case 0x47:
+		inst = instInc{dest: DI}
 
 	// push ax
 	case 0x50:
@@ -2246,6 +2275,19 @@ func execInstJeRel8(inst instJeRel8, state state) (state, error) {
 	return state, nil
 }
 
+func execInstInc(inst instInc, state state) (state, error) {
+	v, err := state.readWordGeneralReg(inst.dest)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstInc")
+	}
+	state, err = state.writeWordGeneralReg(inst.dest, v + 1)
+	// TODO: Set ZF (so it is necessary to handle overflow...)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstInc")
+	}
+	return state, nil
+}
+
 func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
 	switch inst := shouldBeInst.(type) {
 	case instMov:
@@ -2316,6 +2358,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execInstRepeScasb(inst, state, memory)
 	case instJeRel8:
 		return execInstJeRel8(inst, state)
+	case instInc:
+		return execInstInc(inst, state)
 	default:
 		return state, errors.Errorf("unknown inst: %T", shouldBeInst)
 	}
