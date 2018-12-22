@@ -561,6 +561,10 @@ type instCld struct {
 
 }
 
+type instRepeScasb struct {
+
+}
+
 func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
 	buf, err := memory.readByte(at)
 	if err != nil {
@@ -1301,6 +1305,18 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		}
 		inst = instJmpRel16{rel: rel}
 
+	case 0xf3:
+		stringOperation, err := memory.readByte(currentAddress)
+		currentAddress++
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to parse stringOperation")
+		}
+		switch stringOperation {
+		case 0xae:
+			// repe scasb
+			inst = instRepeScasb{}
+		}
+
 	// sti
 	case 0xfb:
 		inst = instSti{}
@@ -1364,7 +1380,7 @@ const (
 	EFLAGS_ZF_INV = 0xffffffbf
 	EFLAGS_CF     = 0x00000001
 	EFLAGS_CF_INV = 0xfffffffe
-	// EFLAGS_DF     = 0x00000200
+	EFLAGS_DF     = 0x00000200
 	EFLAGS_DF_INV = 0xfffffdff
 )
 
@@ -1425,6 +1441,69 @@ func (s state) realAddress(sreg word, reg word) address {
 
 func (s state) realIP() address {
 	return address(s.cs << 4 + s.ip)
+}
+
+// return true if zf == 1
+func (s state) isActiveZF() bool {
+	zf := s.eflags & EFLAGS_ZF
+	return zf != 0
+}
+
+// return true if zf == 0
+func (s state) isNotActiveZF() bool {
+	return !s.isActiveZF()
+}
+
+func (s state) setZF() state {
+	s.eflags = s.eflags | EFLAGS_ZF
+	return s
+}
+
+func (s state) resetZF() state {
+	s.eflags = s.eflags & EFLAGS_ZF_INV
+	return s
+}
+
+// return true if cf == 1
+func (s state) isActiveCF() bool {
+	cf := s.eflags & EFLAGS_CF
+	return cf != 0
+}
+
+// return true if cf == 0
+func (s state) isNotActiveCF() bool {
+	return !s.isActiveCF()
+}
+
+func (s state) setCF() state {
+	s.eflags = s.eflags | EFLAGS_CF
+	return s
+}
+
+func (s state) resetCF() state {
+	s.eflags = s.eflags & EFLAGS_CF_INV
+	return s
+}
+
+// return true if df == 1
+func (s state) isActiveDF() bool {
+	df := s.eflags & EFLAGS_DF
+	return df != 0
+}
+
+// return true if df == 0
+func (s state) isNotActiveDF() bool {
+	return !s.isActiveDF()
+}
+
+func (s state) setDF() state {
+	s.eflags = s.eflags | EFLAGS_DF
+	return s
+}
+
+func (s state) resetDF() state {
+	s.eflags = s.eflags & EFLAGS_DF_INV
+	return s
 }
 
 func (s state) readWordGeneralReg(r registerW) (word, error) {
@@ -1947,17 +2026,17 @@ func execInstCmpMem8Imm8(inst instCmpMem8Imm8, state state, memory *memory, segm
 	}
 
 	if v == inst.imm8 {
-		state.eflags |= EFLAGS_ZF
+		state = state.setZF()
 	}
 	if v == inst.imm8 {
-		state.eflags |= EFLAGS_ZF
-		state.eflags &= EFLAGS_CF_INV
+		state = state.setZF()
+		state = state.resetCF()
 	} else if v < inst.imm8 {
-		state.eflags &= EFLAGS_ZF_INV
-		state.eflags |= EFLAGS_CF
+		state = state.resetZF()
+		state = state.setCF()
 	} else {
-		state.eflags &= EFLAGS_ZF_INV
-		state.eflags &= EFLAGS_CF_INV
+		state = state.resetZF()
+		state = state.resetCF()
 	}
 
 	state.ds = initDS
@@ -1965,7 +2044,7 @@ func execInstCmpMem8Imm8(inst instCmpMem8Imm8, state state, memory *memory, segm
 }
 
 func execInstJneRel8(inst instJneRel8, state state) (state, error) {
-	if state.eflags & EFLAGS_ZF == 0 {
+	if state.isNotActiveZF() {
 		state.ip = word(int16(state.ip) + int16(inst.rel8))
 	}
 	return state, nil
@@ -2009,27 +2088,82 @@ func execInstCmpReg16Reg16(inst instCmpReg16Reg16, state state) (state, error) {
 		return state, errors.Wrap(err, "failed in execInstSubReg16Reg16")
 	}
 	if firstV == secondV {
-		state.eflags |= EFLAGS_ZF
-		state.eflags &= EFLAGS_CF_INV
+		state = state.setZF()
+		state = state.resetCF()
 	} else if firstV < secondV {
-		state.eflags &= EFLAGS_ZF_INV
-		state.eflags |= EFLAGS_CF
+		state = state.resetZF()
+		state = state.setCF()
 	} else {
-		state.eflags &= EFLAGS_ZF_INV
-		state.eflags &= EFLAGS_CF_INV
+		state = state.resetZF()
+		state = state.resetCF()
 	}
 	return state, nil
 }
 
 func execInstJb(inst instJb, state state) (state, error) {
-	if state.eflags & EFLAGS_CF != 0 {
+	if state.isActiveCF() {
 		state.ip = word(int16(state.ip) + int16(inst.rel8))
 	}
 	return state, nil
 }
 
 func execInstCld(inst instCld, state state) (state, error) {
-	state.eflags &= EFLAGS_DF_INV
+	state = state.resetDF()
+	return state, nil
+}
+
+func execScasb(state state, memory *memory) (state, error) {
+	vAL, err := state.readByteGeneralReg(AL)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execScasb")
+	}
+	vSeg, err := state.readWordSreg(DS)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execScasb")
+	}
+	vDI, err := state.readWordGeneralReg(DI)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execScasb")
+	}
+	vMem, err := memory.readByte(state.realAddress(vSeg, vDI))
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execScasb")
+	}
+	if vAL == vMem {
+		state = state.setZF()
+	} else {
+		state = state.resetZF()
+	}
+	if state.isNotActiveDF() {
+		state, err = state.writeWordGeneralReg(DI, vDI + 1)
+		if err != nil {
+			return state, errors.Wrap(err, "failed in execScasb")
+		}
+	} else {
+		state, err = state.writeWordGeneralReg(DI, vDI - 1)
+		if err != nil {
+			return state, errors.Wrap(err, "failed in execScasb")
+		}
+	}
+	return state, nil
+}
+
+func execInstRepeScasb(inst instRepeScasb, state state, memory *memory) (state, error) {
+	count, err := state.readWordGeneralReg(CX)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstRepeScasb")
+	}
+	for count > 0 && state.isNotActiveZF() {
+		state, err = execScasb(state, memory)
+		if err != nil {
+			return state, errors.Wrap(err, "failed in execInstRepeScasb")
+		}
+		count--
+	}
+	state, err = state.writeWordGeneralReg(CX, count)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstRepeScasb")
+	}
 	return state, nil
 }
 
@@ -2097,6 +2231,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execInstJb(inst, state)
 	case instCld:
 		return execInstCld(inst, state)
+	case instRepeScasb:
+		return execInstRepeScasb(inst, state, memory)
 	default:
 		return state, errors.Errorf("unknown inst: %T", shouldBeInst)
 	}
@@ -2132,7 +2268,11 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		if s.shouldExit {
 			break
 		}
+		// vb, _ := s.readByteGeneralReg(AL)
+		// debug.printf("0x%04x\n", vb)
 		// v, _ := s.readWordGeneralReg(CX)
+		// debug.printf("0x%04x\n", v)
+		// v, _ = s.readWordGeneralReg(DI)
 		// debug.printf("0x%04x\n", v)
 	}
 
