@@ -630,6 +630,19 @@ func TestDecodeCmpReg16Reg16(t *testing.T) {
 	}
 }
 
+func TestDecodeCmpAlImm8(t *testing.T) {
+	// cmp al,0x03
+	var reader io.Reader = bytes.NewReader([]byte{0x3c, 0x03})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instCmpReg8Imm8{reg8: AL, imm8: 0x03}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 func TestDecodeJb(t *testing.T) {
 	// jb 0x0b
 	var reader io.Reader = bytes.NewReader([]byte{0x72, 0x0b})

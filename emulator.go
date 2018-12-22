@@ -553,6 +553,11 @@ type instCmpMem8Imm8 struct {
 	imm8 int8
 }
 
+type instCmpReg8Imm8 struct {
+	reg8 registerB
+	imm8 int8
+}
+
 type instJneRel8 struct {
 	rel8 int8
 }
@@ -747,6 +752,16 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		default:
 			return inst, -1, nil, errors.Errorf("unknown or not implemented for mod %d", mod)
 		}
+
+	// cmp al,imm8
+	// 3c ib
+	case 0x3c:
+		imm8, err := memory.readInt8(currentAddress)
+		currentAddress++
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to parse as int8")
+		}
+		inst = instCmpReg8Imm8{reg8: AL, imm8: imm8}
 
 	// inc ax
 	case 0x40:
@@ -2327,9 +2342,6 @@ func execInstCmpMem8Imm8(inst instCmpMem8Imm8, state state, memory *memory, segm
 
 	if v == inst.imm8 {
 		state = state.setZF()
-	}
-	if v == inst.imm8 {
-		state = state.setZF()
 		state = state.resetCF()
 	} else if v < inst.imm8 {
 		state = state.resetZF()
@@ -2340,6 +2352,24 @@ func execInstCmpMem8Imm8(inst instCmpMem8Imm8, state state, memory *memory, segm
 	}
 
 	state.ds = initDS
+	return state, nil
+}
+
+func execInstCmpReg8Imm8(inst instCmpReg8Imm8, state state, memory *memory) (state, error) {
+	v, err := state.readByteGeneralReg(inst.reg8)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstCmpReg8Imm8")
+	}
+	if v == uint8(inst.imm8) {
+		state = state.setZF()
+		state = state.resetCF()
+	} else if v < uint8(inst.imm8) {
+		state = state.resetZF()
+		state = state.setCF()
+	} else {
+		state = state.resetZF()
+		state = state.resetCF()
+	}
 	return state, nil
 }
 
@@ -2673,6 +2703,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execShlReg16Imm(inst, state)
 	case instCmpMem8Imm8:
 		return execInstCmpMem8Imm8(inst, state, memory, segmentOverride)
+	case instCmpReg8Imm8:
+		return execInstCmpReg8Imm8(inst, state, memory)
 	case instJneRel8:
 		return execInstJneRel8(inst, state)
 	case instMovReg16Sreg:
@@ -2734,7 +2766,7 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		if s.shouldExit {
 			break
 		}
-		// h, _ := s.readByteGeneralReg(AH)
+		// h, _ := s.readByteGeneralReg(AL)
 		// debug.printf("0x%04x\n", h)
 		// v, _ = s.readWordGeneralReg(SI)
 		// debug.printf("0x%04x\n", v)
