@@ -2175,7 +2175,7 @@ func execScasb(state state, memory *memory) (state, error) {
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execScasb")
 	}
-	vSeg, err := state.readWordSreg(DS)
+	vSeg, err := state.readWordSreg(ES) // use ES for DI in string instructions
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execScasb")
 	}
@@ -2330,9 +2330,9 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		}
 		// vb, _ := s.readByteGeneralReg(AL)
 		// debug.printf("0x%04x\n", vb)
-		// v, _ := s.readWordGeneralReg(SI)
+		// v, _ := s.readWordSreg(DS)
 		// debug.printf("0x%04x\n", v)
-		// v, _ = s.readWordGeneralReg(DI)
+		// v, _ = s.readWordSreg(ES)
 		// debug.printf("0x%04x\n", v)
 	}
 
