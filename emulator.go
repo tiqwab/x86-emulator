@@ -596,6 +596,10 @@ type instInc struct {
 	dest registerW
 }
 
+type instStosb struct {
+
+}
+
 func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
 	buf, err := memory.readByte(at)
 	if err != nil {
@@ -1185,6 +1189,10 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
 		inst = instMovReg16Mem16{dest: AX, offset: imm}
+
+	// stosb
+	case 0xaa:
+		inst = instStosb{}
 
 	// b0+ rb ib
 	// mov r8,imm8
@@ -2374,6 +2382,37 @@ func execMovsb(state state, memory *memory) (state, error) {
 	return state, nil
 }
 
+func execStosb(state state, memory *memory) (state, error) {
+	vES, err := state.readWordSreg(ES)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execStosb")
+	}
+	vDI, err := state.readWordGeneralReg(DI)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execStosb")
+	}
+	vAL, err := state.readByteGeneralReg(AL)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execStosb")
+	}
+	err = memory.writeByte(state.realAddress(vES, vDI), vAL)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execStosb")
+	}
+	if state.isNotActiveDF() {
+		state, err = state.writeWordGeneralReg(DI, vDI + 1)
+		if err != nil {
+			return state, errors.Wrap(err, "failed in execStosb")
+		}
+	} else {
+		state, err = state.writeWordGeneralReg(DI, vDI - 1)
+		if err != nil {
+			return state, errors.Wrap(err, "failed in execStosb")
+		}
+	}
+	return state, nil
+}
+
 func execInstRepeScasb(inst instRepeScasb, state state, memory *memory) (state, error) {
 	count, err := state.readWordGeneralReg(CX)
 	if err != nil {
@@ -2412,6 +2451,9 @@ func execInstRepMovsb(inst instRepMovsb, state state, memory *memory) (state, er
 	return state, nil
 }
 
+func execInstStosb(inst instStosb, state state, memory *memory) (state, error) {
+	return execStosb(state, memory)
+}
 
 func execInstJeRel8(inst instJeRel8, state state) (state, error) {
 	if state.isActiveZF() {
@@ -2509,6 +2551,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execInstJeRel8(inst, state)
 	case instInc:
 		return execInstInc(inst, state)
+	case instStosb:
+		return execInstStosb(inst, state, memory)
 	default:
 		return state, errors.Errorf("unknown inst: %T", shouldBeInst)
 	}
