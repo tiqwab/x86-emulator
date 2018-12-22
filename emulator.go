@@ -990,6 +990,36 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			return nil, -1, nil, errors.Errorf("expect reg is 0 but %d", reg)
 		}
 
+	// 88 /r
+	// mov r/m8,r8
+	case 0x88:
+		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		currentAddress++
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
+		}
+
+		if mod == 0 {
+			src, err := toRegisterB(reg)
+			if err != nil {
+				return inst, -1, nil, errors.Errorf("illegal reg vlue for registerB: %d", reg)
+			}
+
+			switch rm {
+			case 6:
+				offset, err := memory.readWord(currentAddress)
+				if err != nil {
+					return inst, -1, nil, errors.Wrap(err, "failed to parse word")
+				}
+				currentAddress += 2
+				inst = instMovMem8Reg8{offset: offset, src: src}
+			default:
+				return inst, -1, nil, errors.Errorf("not yet implmeneted for rm %d", rm)
+			}
+		} else {
+			return inst, -1, nil, errors.Errorf("not yet implemented for mod 0x%02x", mod)
+		}
+
 	// 89 /r
 	// mov r/m16,r16
 	case 0x89:
@@ -1611,6 +1641,18 @@ func (s state) ah() uint8 {
 	return uint8(s.ax >> 8)
 }
 
+func (s state) ch() uint8 {
+	return uint8(s.cx >> 8)
+}
+
+func (s state) dh() uint8 {
+	return uint8(s.dx >> 8)
+}
+
+func (s state) bh() uint8 {
+	return uint8(s.bx >> 8)
+}
+
 func (s state) realAddress(sreg word, reg word) address {
 	return realAddress(sreg, reg)
 }
@@ -1715,6 +1757,14 @@ func (s state) readByteGeneralReg(r registerB) (uint8, error) {
 		return s.dl(), nil
 	case BL:
 		return s.bl(), nil
+	case AH:
+		return s.ah(), nil
+	case CH:
+		return s.ch(), nil
+	case DH:
+		return s.dh(), nil
+	case BH:
+		return s.bh(), nil
 	default:
 		return 0, errors.Errorf("illegal registerB or not implemented: %d", r)
 	}
@@ -2684,11 +2734,11 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		if s.shouldExit {
 			break
 		}
-		// v, _ := s.readWordGeneralReg(AX)
-		// debug.printf("0x%04x\n", v)
+		// h, _ := s.readByteGeneralReg(AH)
+		// debug.printf("0x%04x\n", h)
 		// v, _ = s.readWordGeneralReg(SI)
 		// debug.printf("0x%04x\n", v)
-		// v, _ := memory.readByte(s.realAddress(s.es, 0x0034))
+		// v, _ := memory.readByte(s.realAddress(s.es, 0x0035))
 		// debug.printf("0x%04x\n", v)
 	}
 
