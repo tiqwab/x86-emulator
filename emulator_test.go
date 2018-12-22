@@ -682,6 +682,19 @@ func TestDecodeRepeScasb(t *testing.T) {
 	}
 }
 
+func TestDecodeJe(t *testing.T) {
+	// je 0x03
+	var reader io.Reader = bytes.NewReader([]byte{0x74, 0x03})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instJeRel8{rel8: 0x03}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 // run
 
 func (code machineCode) withMov() machineCode {

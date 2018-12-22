@@ -571,6 +571,10 @@ type instRepeScasb struct {
 
 }
 
+type instJeRel8 struct {
+	rel8 int8
+}
+
 func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
 	buf, err := memory.readByte(at)
 	if err != nil {
@@ -743,6 +747,16 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
 		}
 		inst = instJb{rel8: offset}
+
+	// je rel8
+	// 74 cb
+	case 0x74:
+		imm8, err := memory.readInt8(currentAddress)
+		currentAddress++
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
+		}
+		inst = instJeRel8{rel8: imm8}
 
 	// jne rel8
 	// 75 cb
@@ -2211,7 +2225,7 @@ func execInstRepeScasb(inst instRepeScasb, state state, memory *memory) (state, 
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execInstRepeScasb")
 	}
-	for count > 0 && state.isNotActiveZF() {
+	for count > 0 && state.isActiveZF() {
 		state, err = execScasb(state, memory)
 		if err != nil {
 			return state, errors.Wrap(err, "failed in execInstRepeScasb")
@@ -2221,6 +2235,13 @@ func execInstRepeScasb(inst instRepeScasb, state state, memory *memory) (state, 
 	state, err = state.writeWordGeneralReg(CX, count)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execInstRepeScasb")
+	}
+	return state, nil
+}
+
+func execInstJeRel8(inst instJeRel8, state state) (state, error) {
+	if state.isActiveZF() {
+		state.ip = word(int16(state.ip) + int16(inst.rel8))
 	}
 	return state, nil
 }
@@ -2293,6 +2314,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execInstCld(inst, state)
 	case instRepeScasb:
 		return execInstRepeScasb(inst, state, memory)
+	case instJeRel8:
+		return execInstJeRel8(inst, state)
 	default:
 		return state, errors.Errorf("unknown inst: %T", shouldBeInst)
 	}
@@ -2328,11 +2351,9 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		if s.shouldExit {
 			break
 		}
-		// vb, _ := s.readByteGeneralReg(AL)
-		// debug.printf("0x%04x\n", vb)
-		// v, _ := s.readWordSreg(DS)
+		// v, _ := s.readWordGeneralReg(BX)
 		// debug.printf("0x%04x\n", v)
-		// v, _ = s.readWordSreg(ES)
+		// v, _ = s.readWordGeneralReg(AX)
 		// debug.printf("0x%04x\n", v)
 	}
 
