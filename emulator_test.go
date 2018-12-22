@@ -747,6 +747,19 @@ func TestDecodeStosb(t *testing.T) {
 	}
 }
 
+func TestDecodeDec(t *testing.T) {
+	// dec di
+	var reader io.Reader = bytes.NewReader([]byte{0x4f})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instDec{dest: DI}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 // run
 
 func (code machineCode) withMov() machineCode {

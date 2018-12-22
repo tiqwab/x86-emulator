@@ -588,6 +588,10 @@ type instRepMovsb struct {
 
 }
 
+type instStosb struct {
+
+}
+
 type instJeRel8 struct {
 	rel8 int8
 }
@@ -596,8 +600,8 @@ type instInc struct {
 	dest registerW
 }
 
-type instStosb struct {
-
+type instDec struct {
+	dest registerW
 }
 
 func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
@@ -763,6 +767,31 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// inc di
 	case 0x47:
 		inst = instInc{dest: DI}
+
+	// dec ax
+	case 0x48:
+		inst = instDec{dest: AX}
+	// dec cx
+	case 0x49:
+		inst = instDec{dest: CX}
+	// dec dx
+	case 0x4a:
+		inst = instDec{dest: DX}
+	// dec bx
+	case 0x4b:
+		inst = instDec{dest: BX}
+	// dec sp
+	case 0x4c:
+		inst = instDec{dest: SP}
+	// dec bp
+	case 0x4d:
+		inst = instDec{dest: BP}
+	// dec si
+	case 0x4e:
+		inst = instDec{dest: SI}
+	// dec di
+	case 0x4f:
+		inst = instDec{dest: DI}
 
 	// push ax
 	case 0x50:
@@ -2475,6 +2504,19 @@ func execInstInc(inst instInc, state state) (state, error) {
 	return state, nil
 }
 
+func execInstDec(inst instDec, state state) (state, error) {
+	v, err := state.readWordGeneralReg(inst.dest)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstInc")
+	}
+	state, err = state.writeWordGeneralReg(inst.dest, v - 1)
+	// TODO: Set ZF (so it is necessary to handle overflow...)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstInc")
+	}
+	return state, nil
+}
+
 func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
 	switch inst := shouldBeInst.(type) {
 	case instMov:
@@ -2553,6 +2595,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execInstInc(inst, state)
 	case instStosb:
 		return execInstStosb(inst, state, memory)
+	case instDec:
+		return execInstDec(inst, state)
 	default:
 		return state, errors.Errorf("unknown inst: %T", shouldBeInst)
 	}
@@ -2592,7 +2636,7 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		// debug.printf("0x%04x\n", v)
 		// v, _ = s.readWordGeneralReg(SI)
 		// debug.printf("0x%04x\n", v)
-		// v, _ = s.readWordGeneralReg(DI)
+		// v, _ := s.readWordGeneralReg(DI)
 		// debug.printf("0x%04x\n", v)
 	}
 
