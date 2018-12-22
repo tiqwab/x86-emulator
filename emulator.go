@@ -307,6 +307,14 @@ func (memory *memory) readInt16(at address) (int16, error) {
 	return v, nil
 }
 
+func (memory *memory) writeByte(at address, b byte) error {
+	if int(at) >= memory.memorySize {
+		return fmt.Errorf("illegal address: 0x%05x", at)
+	}
+	memory.loadModule[at] = b
+	return nil
+}
+
 func (memory *memory) writeWord(at address, w word) error {
 	if int(at) >= memory.memorySize {
 		return fmt.Errorf("illegal address: 0x%05x", at)
@@ -568,6 +576,10 @@ type instCld struct {
 }
 
 type instRepeScasb struct {
+
+}
+
+type instRepMovsb struct {
 
 }
 
@@ -1380,9 +1392,14 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			return inst, -1, nil, errors.Wrap(err, "failed to parse stringOperation")
 		}
 		switch stringOperation {
+		case 0xa4:
+			// rep movsb
+			inst = instRepMovsb{}
 		case 0xae:
 			// repe scasb
 			inst = instRepeScasb{}
+		default:
+			return inst, -1, nil, errors.Errorf("not yet implemented string instruction")
 		}
 
 	// sti
@@ -2249,6 +2266,53 @@ func execScasb(state state, memory *memory) (state, error) {
 	return state, nil
 }
 
+func execMovsb(state state, memory *memory) (state, error) {
+	vDS, err := state.readWordSreg(DS) // use DS for SI in string instructions
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execScasb")
+	}
+	vES, err := state.readWordSreg(ES) // use ES for DI in string instructions
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execScasb")
+	}
+	vSI, err := state.readWordGeneralReg(SI)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execScasb")
+	}
+	vDI, err := state.readWordGeneralReg(DI)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execScasb")
+	}
+	vMem, err := memory.readByte(state.realAddress(vDS, vSI))
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execScasb")
+	}
+	err = memory.writeByte(state.realAddress(vES, vDI), vMem)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execScasb")
+	}
+	if state.isNotActiveDF() {
+		state, err = state.writeWordGeneralReg(SI, vSI + 1)
+		if err != nil {
+			return state, errors.Wrap(err, "failed in execScasb")
+		}
+		state, err = state.writeWordGeneralReg(DI, vDI + 1)
+		if err != nil {
+			return state, errors.Wrap(err, "failed in execScasb")
+		}
+	} else {
+		state, err = state.writeWordGeneralReg(SI, vSI - 1)
+		if err != nil {
+			return state, errors.Wrap(err, "failed in execScasb")
+		}
+		state, err = state.writeWordGeneralReg(DI, vDI - 1)
+		if err != nil {
+			return state, errors.Wrap(err, "failed in execScasb")
+		}
+	}
+	return state, nil
+}
+
 func execInstRepeScasb(inst instRepeScasb, state state, memory *memory) (state, error) {
 	count, err := state.readWordGeneralReg(CX)
 	if err != nil {
@@ -2267,6 +2331,26 @@ func execInstRepeScasb(inst instRepeScasb, state state, memory *memory) (state, 
 	}
 	return state, nil
 }
+
+func execInstRepMovsb(inst instRepMovsb, state state, memory *memory) (state, error) {
+	count, err := state.readWordGeneralReg(CX)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstRepeScasb")
+	}
+	for count > 0 {
+		state, err = execMovsb(state, memory)
+		if err != nil {
+			return state, errors.Wrap(err, "failed in execInstRepeScasb")
+		}
+		count--
+	}
+	state, err = state.writeWordGeneralReg(CX, count)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstRepeScasb")
+	}
+	return state, nil
+}
+
 
 func execInstJeRel8(inst instJeRel8, state state) (state, error) {
 	if state.isActiveZF() {
@@ -2356,6 +2440,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execInstCld(inst, state)
 	case instRepeScasb:
 		return execInstRepeScasb(inst, state, memory)
+	case instRepMovsb:
+		return execInstRepMovsb(inst, state, memory)
 	case instJeRel8:
 		return execInstJeRel8(inst, state)
 	case instInc:
@@ -2395,9 +2481,11 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		if s.shouldExit {
 			break
 		}
-		// v, _ := s.readWordGeneralReg(BX)
+		// v, _ := s.readWordGeneralReg(CX)
 		// debug.printf("0x%04x\n", v)
-		// v, _ = s.readWordGeneralReg(AX)
+		// v, _ = s.readWordGeneralReg(SI)
+		// debug.printf("0x%04x\n", v)
+		// v, _ = s.readWordGeneralReg(DI)
 		// debug.printf("0x%04x\n", v)
 	}
 
