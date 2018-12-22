@@ -518,6 +518,11 @@ type instMovMem16Reg16 struct {
 	src registerW
 }
 
+type instMovMem8Reg8 struct {
+	offset word
+	src registerB
+}
+
 type instMovReg16Mem16 struct {
 	dest registerW
 	offset word
@@ -1219,6 +1224,16 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		}
 		inst = instMovReg16Mem16{dest: AX, offset: imm}
 
+	// mov moffs8,al
+	// A2
+	case 0xa2:
+		offset, err := memory.readWord(currentAddress)
+		currentAddress += 2
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
+		}
+		inst = instMovMem8Reg8{offset: offset, src: AL}
+
 	// stosb
 	case 0xaa:
 		inst = instStosb{}
@@ -1486,6 +1501,11 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 type intHandler func(*state, *memory) error
 type intHandlers map[uint8]intHandler
 
+func intHandler30(s *state, memory *memory) error {
+	// do nothing for now
+	return nil
+}
+
 func intHandler4a(s *state, memory *memory) error {
 	// do nothing for now
 	return nil
@@ -1541,6 +1561,11 @@ func newState(header *header, customIntHandlers intHandlers) state {
 	intHandlers := make(intHandlers)
 	for k, v := range customIntHandlers {
 		intHandlers[k] = v
+	}
+
+	// int 21 30h
+	if _, ok := intHandlers[0x30]; !ok {
+		intHandlers[0x30] = intHandler30
 	}
 
 	// int 21 4ah
@@ -2119,6 +2144,31 @@ func execMovMem16Reg16(inst instMovMem16Reg16, state state, memory *memory, segm
 	return state, nil
 }
 
+func execMovMem8Reg8(inst instMovMem8Reg8, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
+	initDS := state.ds
+	if segmentOverride != nil {
+		switch segmentOverride.sreg {
+		case ES:
+			state.ds = state.es
+		default:
+			return state, errors.Errorf("not yet implemented or illegal sreg: %#v", segmentOverride.sreg)
+		}
+	}
+
+	v, err := state.readByteGeneralReg(inst.src)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execMovMem8Reg8")
+	}
+
+	err = memory.writeByte(realAddress(state.ds, inst.offset), v)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execMovMem8Reg8")
+	}
+
+	state.ds = initDS
+	return state, nil
+}
+
 func execMovReg16Mem16(inst instMovReg16Mem16, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
 	initDS := state.ds
 	if segmentOverride != nil {
@@ -2559,6 +2609,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execAndReg8Imm8(inst, state, memory)
 	case instMovMem16Reg16:
 		return execMovMem16Reg16(inst, state, memory, segmentOverride)
+	case instMovMem8Reg8:
+		return execMovMem8Reg8(inst, state, memory, segmentOverride)
 	case instMovReg16Mem16:
 		return execMovReg16Mem16(inst, state, memory, segmentOverride)
 	case instMovMem16Sreg:
@@ -2636,7 +2688,7 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		// debug.printf("0x%04x\n", v)
 		// v, _ = s.readWordGeneralReg(SI)
 		// debug.printf("0x%04x\n", v)
-		// v, _ := s.readWordGeneralReg(DI)
+		// v, _ := memory.readByte(s.realAddress(s.es, 0x0034))
 		// debug.printf("0x%04x\n", v)
 	}
 
