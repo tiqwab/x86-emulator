@@ -470,6 +470,12 @@ type instLea struct {
 	address word
 }
 
+type instLeaReg16Disp8 struct {
+	dest registerW
+	base registerW
+	disp8 int8
+}
+
 type instPush struct {
 	src registerW
 }
@@ -1019,8 +1025,8 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			return inst, -1, nil, errors.Errorf("not yet implemented for mod 0x%02x", mod)
 		}
 
-	// 8d /r
 	// lea r16,m
+	// 8d /r
 	case 0x8d:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
 		currentAddress++
@@ -1028,19 +1034,38 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
 
-		if mod == 0 && rm == 6 {
-			dest, err := toRegisterW(reg)
-			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "illegal reg value for registerW")
+		switch mod {
+		case 0:
+			switch rm {
+			case 6:
+				dest, err := toRegisterW(reg)
+				if err != nil {
+					return inst, -1, nil, errors.Wrap(err, "illegal reg value for registerW")
+				}
+				address, err := memory.readWord(currentAddress)
+				currentAddress += 2
+				if err != nil {
+					return inst, -1, nil, errors.Wrap(err, "failed to parse address of lea")
+				}
+				inst = instLea{dest: dest, address: address}
+			default:
+				return inst, -1, nil, errors.Errorf("not yet implemented for mod: %d", mod)
 			}
-			address, err := memory.readWord(currentAddress)
-			currentAddress += 2
+		case 1:
+			dest, err := toRegisterW(uint8(reg))
 			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to parse address of lea")
+				return inst, -1, nil, errors.Errorf("failed to parse as registerW")
 			}
-			inst = instLea{dest: dest, address: address}
-		} else {
-			return inst, -1, nil, errors.Errorf("mod and rm should be 0 and 3 respectively for lea? mod=%d, rm=%d actually", mod, rm)
+			disp8, err := memory.readInt8(currentAddress)
+			currentAddress++
+			switch rm {
+			case 5:
+				inst = instLeaReg16Disp8{dest: dest, base: DI, disp8: disp8}
+			default:
+				return inst, -1, nil, errors.Errorf("not yet implemented for rm: %d", rm)
+			}
+		default:
+			return inst, -1, nil, errors.Errorf("not yet implemented for mod: %d", mod)
 		}
 
 	// 8e /r
@@ -1812,6 +1837,39 @@ func execLea(inst instLea, state state) (state, error) {
 	return state, nil
 }
 
+func execInstLeaReg16Disp8(inst instLeaReg16Disp8, state state, memory *memory) (state, error) {
+	vBase, err := state.readWordGeneralReg(inst.base)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstLeaReg16Disp8")
+	}
+	vDS, err := state.readWordSreg(DS)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstLeaReg16Disp8")
+	}
+	leaVal := word(state.realAddress(vDS, vBase) + address(inst.disp8))
+	switch inst.dest {
+	case AX:
+		state.ax = leaVal
+	case CX:
+		state.cx = leaVal
+	case DX:
+		state.dx = leaVal
+	case BX:
+		state.bx = leaVal
+	case SP:
+		state.sp = leaVal
+	case BP:
+		state.bp = leaVal
+	case SI:
+		state.si = leaVal
+	case DI:
+		state.di = leaVal
+	default:
+		return state, errors.Errorf("unknown register: %v", inst.dest)
+	}
+	return state, nil
+}
+
 func execInt(inst instInt, state state, memory *memory) (state, error) {
 	switch inst.operand {
 	case 0x21:
@@ -2189,6 +2247,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execSub(inst, state)
 	case instLea:
 		return execLea(inst, state)
+	case instLeaReg16Disp8:
+		return execInstLeaReg16Disp8(inst, state, memory)
 	case instInt:
 		return execInt(inst, state, memory)
 	case instPush:
@@ -2270,7 +2330,7 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		}
 		// vb, _ := s.readByteGeneralReg(AL)
 		// debug.printf("0x%04x\n", vb)
-		// v, _ := s.readWordGeneralReg(CX)
+		// v, _ := s.readWordGeneralReg(SI)
 		// debug.printf("0x%04x\n", v)
 		// v, _ = s.readWordGeneralReg(DI)
 		// debug.printf("0x%04x\n", v)

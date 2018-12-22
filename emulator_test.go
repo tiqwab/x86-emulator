@@ -315,6 +315,19 @@ func TestDecodeLeaDx(t *testing.T) {
 	}
 }
 
+func TestDecodeLeaReg16Disp8(t *testing.T) {
+	// lea SI,-1[DI]
+	var reader io.Reader = bytes.NewReader([]byte{0x8d, 0x75, 0xff})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instLeaReg16Disp8{dest: SI, base: DI, disp8: -1}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 func TestDecodePushGeneralRegisters(t *testing.T) {
 	// push ax, cx, dx, bx, sp, bp, si, di
 	var readers = []io.Reader{
