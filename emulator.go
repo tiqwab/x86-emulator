@@ -437,7 +437,7 @@ type instMovReg8Imm8 struct {
 	imm8 uint8
 }
 
-type instMovRegReg struct {
+type instMovReg16Reg16 struct {
 	dest registerW
 	src registerW
 }
@@ -1139,7 +1139,8 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
 
-		if mod == 0 {
+		switch mod {
+		case 0:
 			src, err := toRegisterW(reg)
 			if err != nil {
 				return inst, -1, nil, errors.Errorf("illegal reg vlue for registerW: %d", reg)
@@ -1156,7 +1157,17 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			default:
 				return inst, -1, nil, errors.Errorf("not yet implmeneted for rm %d", rm)
 			}
-		} else {
+		case 3:
+			dest, err := toRegisterW(uint8(rm))
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to parse registerW")
+			}
+			src, err := toRegisterW(uint8(reg))
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to parse registerW")
+			}
+			inst = instMovReg16Reg16{dest: dest, src: src}
+		default:
 			return inst, -1, nil, errors.Errorf("not yet implemented for mod 0x%02x", mod)
 		}
 
@@ -1210,7 +1221,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			if err != nil {
 				return inst, -1, nil, errors.Errorf("illegal rm value for registerW: %d", rm)
 			}
-			inst = instMovRegReg{dest: dest, src: src}
+			inst = instMovReg16Reg16{dest: dest, src: src}
 		} else if mod == 1 {
 			dest, err := toRegisterW(uint8(reg))
 			if err != nil {
@@ -2035,7 +2046,7 @@ func execMovReg8Imm8(inst instMovReg8Imm8, state state) (state, error) {
 	return state, nil
 }
 
-func execMovRegReg(inst instMovRegReg, state state) (state, error) {
+func execMovRegReg(inst instMovReg16Reg16, state state) (state, error) {
 	v, err := state.readWordGeneralReg(inst.src)
 	if err != nil {
 		return state, errors.Wrap(err, "failed to get reg")
@@ -2836,7 +2847,7 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execMov(inst, state)
 	case instMovReg8Imm8:
 		return execMovReg8Imm8(inst, state)
-	case instMovRegReg:
+	case instMovReg16Reg16:
 		return execMovRegReg(inst, state)
 	case instMovSRegReg:
 		return execMovSRegReg(inst, state)
