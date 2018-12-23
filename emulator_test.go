@@ -474,6 +474,19 @@ func TestDecodeAndReg8Imm8(t *testing.T) {
 	}
 }
 
+func TestDecodeAndMem8Reg8(t *testing.T) {
+	// and r/m8,r8
+	var reader io.Reader = bytes.NewReader([]byte{0x20, 0x26, 0x5a, 0x00})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instAndMem8Reg8{offset: 0x005a, reg8: AH}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 func TestDecodeMovMem16Reg16WithSegmentOverride(t *testing.T) {
 	// mov word ptr es:0038, bx
 	var reader io.Reader = bytes.NewReader([]byte{0x26, 0x89, 0x1e, 0x38, 0x00})
