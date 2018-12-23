@@ -628,6 +628,11 @@ type instDec struct {
 	dest registerW
 }
 
+type instXorReg16Reg16 struct {
+	dest registerW
+	src registerW
+}
+
 func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
 	buf, err := memory.readByte(at)
 	if err != nil {
@@ -769,6 +774,30 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 				return inst, -1, nil, errors.Wrap(err, "failed to parse as registerW")
 			}
 			inst = instSubReg16Reg16{dest: dest, src: src}
+		default:
+			return inst, -1, nil, errors.Errorf("unknown or not implemented for mod %d", mod)
+		}
+
+	// xor r16,r/m16
+	// 33 /r
+	case 0x33:
+		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		currentAddress++
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
+		}
+
+		switch mod {
+		case 3:
+			dest, err := toRegisterW(reg)
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to parse as registerW")
+			}
+			src, err := toRegisterW(uint8(rm))
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to parse as registerW")
+			}
+			inst = instXorReg16Reg16{dest: dest, src: src}
 		default:
 			return inst, -1, nil, errors.Errorf("unknown or not implemented for mod %d", mod)
 		}
@@ -2784,6 +2813,23 @@ func execInstDec(inst instDec, state state) (state, error) {
 	return state, nil
 }
 
+func execInstXorReg16Reg16(inst instXorReg16Reg16, state state) (state, error) {
+	destV, err := state.readWordGeneralReg(inst.dest)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstXorReg16Reg16")
+	}
+	srcV, err := state.readWordGeneralReg(inst.src)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstXorReg16Reg16")
+	}
+	v := destV ^ srcV
+	state, err = state.writeWordGeneralReg(inst.dest, v)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstXorReg16Reg16")
+	}
+	return state, nil
+}
+
 func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
 	switch inst := shouldBeInst.(type) {
 	case instMov:
@@ -2874,6 +2920,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execInstStosb(inst, state, memory)
 	case instDec:
 		return execInstDec(inst, state)
+	case instXorReg16Reg16:
+		return execInstXorReg16Reg16(inst, state)
 	default:
 		return state, errors.Errorf("unknown inst: %T", shouldBeInst)
 	}

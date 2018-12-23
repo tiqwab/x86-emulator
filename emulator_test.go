@@ -825,6 +825,19 @@ func TestDecodeDec(t *testing.T) {
 	}
 }
 
+func TestDecodeXorReg16Reg16(t *testing.T) {
+	// xor bp,bp
+	var reader io.Reader = bytes.NewReader([]byte{0x33, 0xed})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instXorReg16Reg16{dest: BP, src: BP}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 // run
 
 func (code machineCode) withMov() machineCode {
