@@ -1331,7 +1331,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		imm, err := memory.readWord(currentAddress)
 		currentAddress += 2
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode imm16")
 		}
 		inst = instMovReg16Mem16{dest: AX, offset: imm}
 
@@ -1341,9 +1341,19 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		offset, err := memory.readWord(currentAddress)
 		currentAddress += 2
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode imm16")
 		}
 		inst = instMovMem8Reg8{offset: offset, src: AL}
+
+	// mov moffs16,ax
+	// A3
+	case 0xa3:
+		offset, err := memory.readWord(currentAddress)
+		currentAddress += 2
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode imm16")
+		}
+		inst = instMovMem16Reg16{offset: offset, src: AX}
 
 	// stosb
 	case 0xaa:
@@ -2899,11 +2909,11 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		if s.shouldExit {
 			break
 		}
-		// x, _ := s.readByteGeneralReg(AH)
+		// x, _ := s.readWordGeneralReg(AX)
 		// debug.printf("0x%04x\n", x)
 		// v, _ = s.readWordGeneralReg(CX)
 		// debug.printf("0x%04x\n", v)
-		// z, _ := memory.readByte(s.realAddress(s.ds, 0x0042))
+		// z, _ := memory.readWord(s.realAddress(s.ds, 0x0042))
 		// debug.printf("0x%04x\n", z)
 	}
 
