@@ -558,9 +558,19 @@ type instCmpMem8Imm8 struct {
 	imm8 int8
 }
 
+type instCmpMem16Imm8 struct {
+	offset word
+	imm8 int8
+}
+
 type instCmpReg8Imm8 struct {
 	reg8 registerB
 	imm8 int8
+}
+
+type instCmpReg16Reg16 struct {
+	first registerW
+	second registerW
 }
 
 type instJneRel8 struct {
@@ -580,11 +590,6 @@ type instSubReg16Reg16 struct {
 type instSubReg8Reg8 struct {
 	dest registerB
 	src registerB
-}
-
-type instCmpReg16Reg16 struct {
-	first registerW
-	second registerW
 }
 
 type instJb struct {
@@ -988,6 +993,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 
 	// add r/m16, imm8
 	// 83 /5 -> sub r/m16, imm8
+	// 83 /7 ib ->  cmp r/m16,imm8
 	case 0x83:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
 		currentAddress++
@@ -995,12 +1001,12 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
 
-		if mod != 3 {
-			return nil, -1, nil, errors.Errorf("expect mod is 0b11 but %02b", mod)
-		}
 		switch reg {
 		// add
 		case 0:
+			if mod != 3 {
+				return nil, -1, nil, errors.Errorf("expect mod is 0b11 but %02b", mod)
+			}
 			imm, err := memory.readByte(currentAddress)
 			currentAddress++
 			if err != nil {
@@ -1023,6 +1029,9 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			}
 		// sub
 		case 5:
+			if mod != 3 {
+				return nil, -1, nil, errors.Errorf("expect mod is 0b11 but %02b", mod)
+			}
 			imm, err := memory.readByte(currentAddress)
 			currentAddress++
 			if err != nil {
@@ -1039,6 +1048,24 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 				inst = instSub{dest: SP, imm: imm}
 			default:
 				return nil, -1, nil, errors.Errorf("unknown register: %d", rm)
+			}
+		// cmp
+		case 7:
+			switch mod {
+			case 0:
+				offset, err := memory.readWord(currentAddress)
+				currentAddress += 2
+				if err != nil {
+					return nil, -1, nil, errors.Wrap(err, "failed to parse disp16")
+				}
+				imm8, err := memory.readInt8(currentAddress)
+				currentAddress++
+				if err != nil {
+					return nil, -1, nil, errors.Wrap(err, "failed to parse imm8")
+				}
+				inst = instCmpMem16Imm8{offset: offset, imm8: imm8}
+			default:
+				return nil, -1, nil, errors.Errorf("not yet implemented for mod: %d", mod)
 			}
 		default:
 			return nil, -1, nil, errors.Errorf("expect reg is 0 but %d", reg)
@@ -2416,6 +2443,26 @@ func execInstCmpMem8Imm8(inst instCmpMem8Imm8, state state, memory *memory, segm
 	return state, nil
 }
 
+func execInstCmpMem16Imm8(inst instCmpMem16Imm8, state state, memory *memory) (state, error) {
+	v, err := memory.readInt16(state.realAddress(state.ds, inst.offset))
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstCmpMem8Imm8")
+	}
+
+	if v == int16(inst.imm8) {
+		state = state.setZF()
+		state = state.resetCF()
+	} else if v < int16(inst.imm8) {
+		state = state.resetZF()
+		state = state.setCF()
+	} else {
+		state = state.resetZF()
+		state = state.resetCF()
+	}
+
+	return state, nil
+}
+
 func execInstCmpReg8Imm8(inst instCmpReg8Imm8, state state, memory *memory) (state, error) {
 	v, err := state.readByteGeneralReg(inst.reg8)
 	if err != nil {
@@ -2425,6 +2472,28 @@ func execInstCmpReg8Imm8(inst instCmpReg8Imm8, state state, memory *memory) (sta
 		state = state.setZF()
 		state = state.resetCF()
 	} else if v < uint8(inst.imm8) {
+		state = state.resetZF()
+		state = state.setCF()
+	} else {
+		state = state.resetZF()
+		state = state.resetCF()
+	}
+	return state, nil
+}
+
+func execInstCmpReg16Reg16(inst instCmpReg16Reg16, state state) (state, error) {
+	firstV, err := state.readWordGeneralReg(inst.first)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstSubReg16Reg16")
+	}
+	secondV, err := state.readWordGeneralReg(inst.second)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstSubReg16Reg16")
+	}
+	if firstV == secondV {
+		state = state.setZF()
+		state = state.resetCF()
+	} else if firstV < secondV {
 		state = state.resetZF()
 		state = state.setCF()
 	} else {
@@ -2481,28 +2550,6 @@ func execInstSubReg8Reg8(inst instSubReg8Reg8, state state) (state, error) {
 	state, err = state.writeByteGeneralReg(inst.dest, destV - srcV)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execInstSubReg8Reg8")
-	}
-	return state, nil
-}
-
-func execInstCmpReg16Reg16(inst instCmpReg16Reg16, state state) (state, error) {
-	firstV, err := state.readWordGeneralReg(inst.first)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstSubReg16Reg16")
-	}
-	secondV, err := state.readWordGeneralReg(inst.second)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstSubReg16Reg16")
-	}
-	if firstV == secondV {
-		state = state.setZF()
-		state = state.resetCF()
-	} else if firstV < secondV {
-		state = state.resetZF()
-		state = state.setCF()
-	} else {
-		state = state.resetZF()
-		state = state.resetCF()
 	}
 	return state, nil
 }
@@ -2785,8 +2832,12 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execShlReg16Imm(inst, state)
 	case instCmpMem8Imm8:
 		return execInstCmpMem8Imm8(inst, state, memory, segmentOverride)
+	case instCmpMem16Imm8:
+		return execInstCmpMem16Imm8(inst, state, memory)
 	case instCmpReg8Imm8:
 		return execInstCmpReg8Imm8(inst, state, memory)
+	case instCmpReg16Reg16:
+		return execInstCmpReg16Reg16(inst, state)
 	case instJneRel8:
 		return execInstJneRel8(inst, state)
 	case instMovReg16Sreg:
@@ -2795,8 +2846,6 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execInstSubReg16Reg16(inst, state)
 	case instSubReg8Reg8:
 		return execInstSubReg8Reg8(inst, state)
-	case instCmpReg16Reg16:
-		return execInstCmpReg16Reg16(inst, state)
 	case instJb:
 		return execInstJb(inst, state)
 	case instCld:
@@ -2854,7 +2903,7 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		// debug.printf("0x%04x\n", x)
 		// v, _ = s.readWordGeneralReg(CX)
 		// debug.printf("0x%04x\n", v)
-		// z, _ := memory.readByte(s.realAddress(s.ds, 0x005a))
+		// z, _ := memory.readByte(s.realAddress(s.ds, 0x0042))
 		// debug.printf("0x%04x\n", z)
 	}
 
