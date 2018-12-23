@@ -362,6 +362,19 @@ func TestDecodePushGeneralRegisters(t *testing.T) {
 	}
 }
 
+func TestDecodePushDs(t *testing.T) {
+	// push ds
+	var reader io.Reader = bytes.NewReader([]byte{0x1e})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instPushSreg{src: DS}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 func TestDecodePopGeneralRegisters(t *testing.T) {
 	// pop ax, cx, dx, bx, sp, bp, si, di
 	var readers = []io.Reader{

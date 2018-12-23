@@ -488,6 +488,10 @@ type instPush struct {
 	src registerW
 }
 
+type instPushSreg struct {
+	src registerS
+}
+
 type instPop struct {
 	dest registerW
 }
@@ -692,6 +696,10 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			return inst, -1, nil, errors.Errorf("unknown or not implemented for mod %d", mod)
 		}
 
+	// push ds
+	// 1e
+	case 0x1e:
+		inst = instPushSreg{src: DS}
 	// and r/m64,r8
 	// 20 /r
 	case 0x20:
@@ -2252,6 +2260,18 @@ func execPush(inst instPush, state state, memory *memory) (state, error) {
 	return state, nil
 }
 
+func execPushSreg(inst instPushSreg, state state, memory *memory) (state, error) {
+	v, err := state.readWordSreg(inst.src)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execPushSreg")
+	}
+	state, err = state.pushWord(v, memory)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execPushSreg")
+	}
+	return state, nil
+}
+
 func execPop(inst instPop, state state, memory *memory) (state, error) {
 	w, state, err := state.popWord(memory)
 	state, err = state.writeWordGeneralReg(inst.dest, w)
@@ -2869,6 +2889,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execInt(inst, state, memory)
 	case instPush:
 		return execPush(inst, state, memory)
+	case instPushSreg:
+		return execPushSreg(inst, state, memory)
 	case instPop:
 		return execPop(inst, state, memory)
 	case instCall:
