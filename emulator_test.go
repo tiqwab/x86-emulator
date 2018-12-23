@@ -747,6 +747,19 @@ func TestDecodeRepMovsb(t *testing.T) {
 	}
 }
 
+func TestDecodeRepStosb(t *testing.T) {
+	// rep stosb
+	var reader io.Reader = bytes.NewReader([]byte{0xf3, 0xaa})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instRepStosb{}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 func TestDecodeJe(t *testing.T) {
 	// je 0x03
 	var reader io.Reader = bytes.NewReader([]byte{0x74, 0x03})

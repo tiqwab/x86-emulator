@@ -603,6 +603,10 @@ type instRepMovsb struct {
 
 }
 
+type instRepStosb struct {
+
+}
+
 type instStosb struct {
 
 }
@@ -1556,6 +1560,9 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		case 0xa4:
 			// rep movsb
 			inst = instRepMovsb{}
+		case 0xaa:
+			// rep stosb
+			inst = instRepStosb{}
 		case 0xae:
 			// repe scasb
 			inst = instRepeScasb{}
@@ -2664,6 +2671,25 @@ func execInstRepMovsb(inst instRepMovsb, state state, memory *memory) (state, er
 	return state, nil
 }
 
+func execInstRepStosb(inst instRepStosb, state state, memory *memory) (state, error) {
+	count, err := state.readWordGeneralReg(CX)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstRepeScasb")
+	}
+	for count > 0 {
+		state, err = execStosb(state, memory)
+		if err != nil {
+			return state, errors.Wrap(err, "failed in execInstRepeScasb")
+		}
+		count--
+	}
+	state, err = state.writeWordGeneralReg(CX, count)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstRepeScasb")
+	}
+	return state, nil
+}
+
 func execInstStosb(inst instStosb, state state, memory *memory) (state, error) {
 	return execStosb(state, memory)
 }
@@ -2779,6 +2805,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execInstRepeScasb(inst, state, memory)
 	case instRepMovsb:
 		return execInstRepMovsb(inst, state, memory)
+	case instRepStosb:
+		return execInstRepStosb(inst, state, memory)
 	case instJeRel8:
 		return execInstJeRel8(inst, state)
 	case instInc:
