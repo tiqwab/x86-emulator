@@ -890,6 +890,19 @@ func TestDecodeJae(t *testing.T) {
 	}
 }
 
+func TestDecodeMovMem16Imm16(t *testing.T) {
+	// mov word ptr 0x005e,0x2000
+	var reader io.Reader = bytes.NewReader([]byte{0xc7, 0x06, 0x5e, 0x00, 0x00, 0x20})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instMovMem16Imm16{offset: 0x005e, imm16: 0x2000}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 // run
 
 func (code machineCode) withMov() machineCode {
