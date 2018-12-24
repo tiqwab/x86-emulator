@@ -354,6 +354,19 @@ func TestDecodeMovMem16Disp8Imm16(t *testing.T) {
 	}
 }
 
+func TestDecodeMovMem16Disp8Reg16(t *testing.T) {
+	// mov word ptr -4[bp], ax
+	var reader io.Reader = bytes.NewReader([]byte{0x89, 0x46, 0xfc})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instMovMem16Disp8Reg16{base: BP, disp8: -4, src: AX}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 func TestDecodeShlAX(t *testing.T) {
 	// shl ax,1
 	var reader io.Reader = bytes.NewReader([]byte{0xc1, 0xe0, 0x01})
@@ -1213,6 +1226,7 @@ func TestRunExeWithSampleSgor(t *testing.T) {
 	}
 }
 
+// c main without _exit
 func TestRunExeWithSampleCmain2(t *testing.T) {
 	file, err := os.Open("sample/cmain2.exe")
 	if err != nil {
@@ -1228,17 +1242,18 @@ func TestRunExeWithSampleCmain2(t *testing.T) {
 	}
 }
 
+// c main with _exit
 func TestRunExeWithSampleCmain5(t *testing.T) {
 	file, err := os.Open("sample/cmain5.exe")
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	debug = debugT(true)
+	// debug = debugT(true)
 	exitCode, _, err := RunExe(file)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	if exitCode != 0 {
+	if exitCode != 2 {
 		t.Errorf("expect exitCode to be %d but actual %d", 8, exitCode)
 	}
 }

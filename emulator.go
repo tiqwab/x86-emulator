@@ -499,6 +499,12 @@ type instMovMem16Disp8Imm16 struct {
 	imm16 int16
 }
 
+type instMovMem16Disp8Reg16 struct {
+	base registerW
+	disp8 int8
+	src registerW
+}
+
 type instShl struct {
 	register registerW
 	imm uint8
@@ -1278,6 +1284,22 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 				inst = instMovMem16Reg16{offset: offset, src: src}
 			default:
 				return inst, -1, nil, errors.Errorf("not yet implmeneted for rm %d", rm)
+			}
+		case 1:
+			src, err := toRegisterW(reg)
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to parse registerW")
+			}
+			switch rm {
+			case 6:
+				disp8, err := memory.readInt8(currentAddress)
+				currentAddress++
+				if err != nil {
+					return inst, -1, nil, errors.Wrap(err, "failed to parse disp8")
+				}
+				inst = instMovMem16Disp8Reg16{base: BP, disp8: disp8, src: src}
+			default:
+				return inst, -1, nil, errors.Errorf("not yet implemented for rm: %d", rm)
 			}
 		case 3:
 			dest, err := toRegisterW(uint8(rm))
@@ -2507,28 +2529,74 @@ func execMovMem16Imm16(inst instMovMem16Imm16, state state, memory *memory) (sta
 }
 
 func execMovMem16Disp8Imm16(inst instMovMem16Disp8Imm16, state state, memory *memory) (state, error) {
-	var offset word
+	var address address
 	switch inst.base {
 	case AX:
-		offset = state.ax + word(inst.disp8)
+		address = state.realAddress(state.ds, state.ax + word(inst.disp8))
 	case CX:
-		offset = state.cx + word(inst.disp8)
+		address = state.realAddress(state.ds, state.cx + word(inst.disp8))
 	case DX:
-		offset = state.dx + word(inst.disp8)
+		address = state.realAddress(state.ds, state.dx + word(inst.disp8))
 	case BX:
-		offset = state.bx + word(inst.disp8)
+		address = state.realAddress(state.ds, state.bx + word(inst.disp8))
 	case SP:
-		offset = state.sp + word(inst.disp8)
+		address = state.realAddress(state.ds, state.sp + word(inst.disp8))
 	case BP:
-		offset = state.bp + word(inst.disp8)
+		address = state.realAddress(state.ss, state.bp + word(inst.disp8))
 	case SI:
-		offset = state.si + word(inst.disp8)
+		address = state.realAddress(state.ds, state.si + word(inst.disp8))
 	case DI:
-		offset = state.di + word(inst.disp8)
+		address = state.realAddress(state.ds, state.di + word(inst.disp8))
 	default:
 		return state, errors.Errorf("illegal base: %d", inst.base)
 	}
-	err := memory.writeWord(state.realAddress(state.ds, offset), word(inst.imm16))
+	err := memory.writeWord(address, word(inst.imm16))
+	return state, err
+}
+
+func execMovMem16Disp8Reg16(inst instMovMem16Disp8Reg16, state state, memory *memory) (state, error) {
+	var err error
+	var address address
+	switch inst.base {
+	case AX:
+		address = state.realAddress(state.ds, state.ax + word(inst.disp8))
+	case CX:
+		address = state.realAddress(state.ds, state.cx + word(inst.disp8))
+	case DX:
+		address = state.realAddress(state.ds, state.dx + word(inst.disp8))
+	case BX:
+		address = state.realAddress(state.ds, state.bx + word(inst.disp8))
+	case SP:
+		address = state.realAddress(state.ds, state.sp + word(inst.disp8))
+	case BP:
+		address = state.realAddress(state.ss, state.bp + word(inst.disp8))
+	case SI:
+		address = state.realAddress(state.ds, state.si + word(inst.disp8))
+	case DI:
+		address = state.realAddress(state.ds, state.di + word(inst.disp8))
+	default:
+		return state, errors.Errorf("illegal base: %d", inst.base)
+	}
+	switch inst.src {
+	case AX:
+		err = memory.writeWord(address, state.ax)
+	case CX:
+		err = memory.writeWord(address, state.cx)
+	case DX:
+		err = memory.writeWord(address, state.dx)
+	case BX:
+		err = memory.writeWord(address, state.bx)
+	case SP:
+		err = memory.writeWord(address, state.sp)
+	case BP:
+		err = memory.writeWord(address, state.bp)
+	case SI:
+		err = memory.writeWord(address, state.si)
+	case DI:
+		err = memory.writeWord(address, state.di)
+	default:
+		return state, errors.Errorf("illegal base: %d", inst.base)
+	}
 	return state, err
 }
 
@@ -3319,6 +3387,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execMovMem16Imm16(inst, state, memory)
 	case instMovMem16Disp8Imm16:
 		return execMovMem16Disp8Imm16(inst, state, memory)
+	case instMovMem16Disp8Reg16:
+		return execMovMem16Disp8Reg16(inst, state, memory)
 	case instShl:
 		return execShl(inst, state)
 	case instAdd:
