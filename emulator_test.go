@@ -419,6 +419,19 @@ func TestDecodeSubReg8Reg8(t *testing.T) {
 	}
 }
 
+func TestDecodeSubReg16Imm16(t *testing.T) {
+	// sub sp,0x0002
+	var reader io.Reader = bytes.NewReader([]byte{0x81, 0xec, 0x02, 0x00})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instSubReg16Imm16{dest: SP, imm16: 0x0002}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 func TestDecodeLeaDx(t *testing.T) {
 	// lea dx,msg
 	var reader io.Reader = bytes.NewReader([]byte{0x8d, 0x16, 0x02, 0x00}) // 0b00010110
@@ -1148,16 +1161,17 @@ func TestRunExeWithSampleSgor(t *testing.T) {
 	}
 }
 
-/*
 func TestRunExeWithSampleCmain2(t *testing.T) {
 	file, err := os.Open("sample/cmain2.exe")
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
 	debug = debugT(true)
-	_, _, err = RunExe(file)
+	exitCode, _, err := RunExe(file)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
+	if exitCode != 8 {
+		t.Errorf("expect exitCode to be %d but actual %d", 8, exitCode)
+	}
 }
-*/

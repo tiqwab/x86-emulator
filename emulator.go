@@ -518,6 +518,11 @@ type instSubReg8Reg8 struct {
 	src registerB
 }
 
+type instSubReg16Imm16 struct {
+	dest registerW
+	imm16 int16
+}
+
 type instLea struct {
 	dest registerW
 	address word
@@ -1063,8 +1068,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			return nil, -1, nil, errors.Errorf("unknown reg: %d", reg)
 		}
 
-	// cmp r/m16,imm16
-	// 81 /7 iw
 	case 0x81:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
 		currentAddress++
@@ -1072,24 +1075,46 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
 
-		if reg != 7 {
-			return inst, -1, nil, errors.Errorf("illegal reg: %d", reg)
-		}
+		switch reg {
+		case 5:
+			// sub r/m16,imm16
+			// 81 /5 iw
+			switch mod {
+			case 3:
+				reg16, err := toRegisterW(uint8(rm))
+				if err != nil {
+					return inst, -1, nil, errors.Wrap(err, "failed to parse registerW")
+				}
+				imm16, err := memory.readWord(currentAddress)
+				currentAddress += 2
+				if err != nil {
+					return inst, -1, nil, errors.Wrap(err, "failed to parse word")
+				}
+				inst = instSubReg16Imm16{dest: reg16, imm16: int16(imm16)}
+			default:
+				return inst, -1, nil, errors.Errorf("illegal or not implementedf for mod: %d", mod)
+			}
 
-		switch mod {
-		case 3:
-			reg16, err := toRegisterW(uint8(rm))
-			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to parse registerW")
+		case 7:
+			// cmp r/m16,imm16
+			// 81 /7 iw
+			switch mod {
+			case 3:
+				reg16, err := toRegisterW(uint8(rm))
+				if err != nil {
+					return inst, -1, nil, errors.Wrap(err, "failed to parse registerW")
+				}
+				imm16, err := memory.readWord(currentAddress)
+				currentAddress += 2
+				if err != nil {
+					return inst, -1, nil, errors.Wrap(err, "failed to parse word")
+				}
+				inst = instCmpReg16Imm16{reg16: reg16, imm16: int16(imm16)}
+			default:
+				return inst, -1, nil, errors.Errorf("illegal or not implementedf for mod: %d", mod)
 			}
-			imm16, err := memory.readWord(currentAddress)
-			currentAddress += 2
-			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to parse word")
-			}
-			inst = instCmpReg16Imm16{reg16: reg16, imm16: int16(imm16)}
 		default:
-			return inst, -1, nil, errors.Errorf("illegal or not implementedf for mod: %d", mod)
+			return inst, -1, nil, errors.Errorf("unknown reg value: %d", reg)
 		}
 
 	// add r/m16, imm8
@@ -2496,6 +2521,30 @@ func execSubReg8Reg8(inst instSubReg8Reg8, state state) (state, error) {
 	return state, nil
 }
 
+func execSubReg16Imm16(inst instSubReg16Imm16, state state) (state, error) {
+	switch inst.dest {
+	case AX:
+		state.ax -= word(inst.imm16)
+	case CX:
+		state.cx -= word(inst.imm16)
+	case DX:
+		state.dx -= word(inst.imm16)
+	case BX:
+		state.bx -= word(inst.imm16)
+	case SP:
+		state.sp -= word(inst.imm16)
+	case BP:
+		state.bp -= word(inst.imm16)
+	case SI:
+		state.si -= word(inst.imm16)
+	case DI:
+		state.di -= word(inst.imm16)
+	default:
+		return state, errors.Errorf("unknown register: %v", inst.dest)
+	}
+	return state, nil
+}
+
 func execLea(inst instLea, state state) (state, error) {
 	switch inst.dest {
 	case AX:
@@ -3107,6 +3156,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execSubReg16Reg16(inst, state)
 	case instSubReg8Reg8:
 		return execSubReg8Reg8(inst, state)
+	case instSubReg16Imm16:
+		return execSubReg16Imm16(inst, state)
 	case instLea:
 		return execLea(inst, state)
 	case instLeaReg16Disp8:
@@ -3208,8 +3259,8 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		if s.shouldExit {
 			break
 		}
-		// x, _ := s.readWordGeneralReg(BX)
-		// debug.printf("0x%04x\n", x)
+		x, _ := s.readWordGeneralReg(SP)
+		debug.printf("0x%04x\n", x)
 		// debug.printf("0x%08x\n", s.eflags)
 		// y, _ := s.readWordSreg(DS)
 		// debug.printf("0x%04x\n", y)
