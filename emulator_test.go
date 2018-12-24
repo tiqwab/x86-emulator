@@ -825,6 +825,19 @@ func TestDecodeRepeScasb(t *testing.T) {
 	}
 }
 
+func TestDecodeRepeScasw(t *testing.T) {
+	// repe scasw
+	var reader io.Reader = bytes.NewReader([]byte{0xf3, 0xaf})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instRepeScasw{}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 func TestDecodeRepMovsb(t *testing.T) {
 	// rep movsb
 	var reader io.Reader = bytes.NewReader([]byte{0xf3, 0xa4})
@@ -1201,20 +1214,3 @@ func TestRunExeWithSampleCmain2(t *testing.T) {
 		t.Errorf("expect exitCode to be %d but actual %d", 8, exitCode)
 	}
 }
-
-/*
-func TestRunExeWithSampleCmain4(t *testing.T) {
-	file, err := os.Open("sample/cmain4.exe")
-	if err != nil {
-		t.Errorf("%+v", err)
-	}
-	debug = debugT(true)
-	exitCode, _, err := RunExe(file)
-	if err != nil {
-		t.Errorf("%+v", err)
-	}
-	if exitCode != 8 {
-		t.Errorf("expect exitCode to be %d but actual %d", 8, exitCode)
-	}
-}
-*/
