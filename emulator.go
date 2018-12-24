@@ -503,9 +503,19 @@ type instAdd struct {
 	imm uint8
 }
 
-type instSub struct {
+type instSubReg16Imm8 struct {
 	dest registerW
 	imm uint8
+}
+
+type instSubReg16Reg16 struct {
+	dest registerW
+	src registerW
+}
+
+type instSubReg8Reg8 struct {
+	dest registerB
+	src registerB
 }
 
 type instLea struct {
@@ -603,16 +613,6 @@ type instCmpReg16Reg16 struct {
 
 type instJneRel8 struct {
 	rel8 int8
-}
-
-type instSubReg16Reg16 struct {
-	dest registerW
-	src registerW
-}
-
-type instSubReg8Reg8 struct {
-	dest registerB
-	src registerB
 }
 
 type instJb struct {
@@ -1140,13 +1140,13 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			}
 			switch rm {
 			case AX:
-				inst = instSub{dest: AX, imm: imm}
+				inst = instSubReg16Imm8{dest: AX, imm: imm}
 			case DX:
-				inst = instSub{dest: DX, imm: imm}
+				inst = instSubReg16Imm8{dest: DX, imm: imm}
 			case CX:
-				inst = instSub{dest: CX, imm: imm}
+				inst = instSubReg16Imm8{dest: CX, imm: imm}
 			case SP:
-				inst = instSub{dest: SP, imm: imm}
+				inst = instSubReg16Imm8{dest: SP, imm: imm}
 			default:
 				return nil, -1, nil, errors.Errorf("unknown register: %d", rm)
 			}
@@ -2448,7 +2448,7 @@ func execAdd(inst instAdd, state state) (state, error) {
 	return state, nil
 }
 
-func execSub(inst instSub, state state) (state, error) {
+func execSubReg16Imm8(inst instSubReg16Imm8, state state) (state, error) {
 	switch inst.dest {
 	case AX:
 		state.ax -= word(inst.imm)
@@ -2460,6 +2460,38 @@ func execSub(inst instSub, state state) (state, error) {
 		state.sp -= word(inst.imm)
 	default:
 		return state, errors.Errorf("unknown register: %v", inst.dest)
+	}
+	return state, nil
+}
+
+func execSubReg16Reg16(inst instSubReg16Reg16, state state) (state, error) {
+	srcV, err := state.readWordGeneralReg(inst.src)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execSubReg16Reg16")
+	}
+	destV, err := state.readWordGeneralReg(inst.dest)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execSubReg16Reg16")
+	}
+	state, err = state.writeWordGeneralReg(inst.dest, destV - srcV)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execSubReg16Reg16")
+	}
+	return state, nil
+}
+
+func execSubReg8Reg8(inst instSubReg8Reg8, state state) (state, error) {
+	srcV, err := state.readByteGeneralReg(inst.src)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execSubReg8Reg8")
+	}
+	destV, err := state.readByteGeneralReg(inst.dest)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execSubReg8Reg8")
+	}
+	state, err = state.writeByteGeneralReg(inst.dest, destV - srcV)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execSubReg8Reg8")
 	}
 	return state, nil
 }
@@ -2749,11 +2781,11 @@ func execInstCmpReg8Imm8(inst instCmpReg8Imm8, state state, memory *memory) (sta
 func execInstCmpReg16Reg16(inst instCmpReg16Reg16, state state) (state, error) {
 	firstV, err := state.readWordGeneralReg(inst.first)
 	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstSubReg16Reg16")
+		return state, errors.Wrap(err, "failed in execCmpReg16Reg16")
 	}
 	secondV, err := state.readWordGeneralReg(inst.second)
 	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstSubReg16Reg16")
+		return state, errors.Wrap(err, "failed in execCmpReg16Reg16")
 	}
 	if firstV == secondV {
 		state = state.setZF()
@@ -2789,38 +2821,6 @@ func execInstCmpReg16Imm16(inst instCmpReg16Imm16, state state) (state, error) {
 func execInstJneRel8(inst instJneRel8, state state) (state, error) {
 	if state.isNotActiveZF() {
 		state.ip = word(int16(state.ip) + int16(inst.rel8))
-	}
-	return state, nil
-}
-
-func execInstSubReg16Reg16(inst instSubReg16Reg16, state state) (state, error) {
-	srcV, err := state.readWordGeneralReg(inst.src)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstSubReg16Reg16")
-	}
-	destV, err := state.readWordGeneralReg(inst.dest)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstSubReg16Reg16")
-	}
-	state, err = state.writeWordGeneralReg(inst.dest, destV - srcV)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstSubReg16Reg16")
-	}
-	return state, nil
-}
-
-func execInstSubReg8Reg8(inst instSubReg8Reg8, state state) (state, error) {
-	srcV, err := state.readByteGeneralReg(inst.src)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstSubReg8Reg8")
-	}
-	destV, err := state.readByteGeneralReg(inst.dest)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstSubReg8Reg8")
-	}
-	state, err = state.writeByteGeneralReg(inst.dest, destV - srcV)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstSubReg8Reg8")
 	}
 	return state, nil
 }
@@ -3101,8 +3101,12 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execShl(inst, state)
 	case instAdd:
 		return execAdd(inst, state)
-	case instSub:
-		return execSub(inst, state)
+	case instSubReg16Imm8:
+		return execSubReg16Imm8(inst, state)
+	case instSubReg16Reg16:
+		return execSubReg16Reg16(inst, state)
+	case instSubReg8Reg8:
+		return execSubReg8Reg8(inst, state)
 	case instLea:
 		return execLea(inst, state)
 	case instLeaReg16Disp8:
@@ -3147,10 +3151,6 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execInstCmpReg16Imm16(inst, state)
 	case instJneRel8:
 		return execInstJneRel8(inst, state)
-	case instSubReg16Reg16:
-		return execInstSubReg16Reg16(inst, state)
-	case instSubReg8Reg8:
-		return execInstSubReg8Reg8(inst, state)
 	case instJb:
 		return execInstJb(inst, state)
 	case instCld:

@@ -380,14 +380,40 @@ func TestDecodeAddCX(t *testing.T) {
 	}
 }
 
-func TestDecodeSubAXImm(t *testing.T) {
+func TestDecodeSubReg16Imm8(t *testing.T) {
 	// sub ax,2
 	var reader io.Reader = bytes.NewReader([]byte{0x83, 0xec, 0x02})
 	actual, _, _, err := decodeInst(reader)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instSub{dest: SP, imm: 0x0002}
+	expected := instSubReg16Imm8{dest: SP, imm: 0x0002}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
+func TestDecodeSubReg16Reg16(t *testing.T) {
+	// sub cx,ax
+	var reader io.Reader = bytes.NewReader([]byte{0x2b, 0xc8})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instSubReg16Reg16{dest: CX, src: AX}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
+func TestDecodeSubReg8Reg8(t *testing.T) {
+	// sub al,al
+	var reader io.Reader = bytes.NewReader([]byte{0x2a, 0xc0})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instSubReg8Reg8{dest: AL, src: AL}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
@@ -677,32 +703,6 @@ func TestDecodeMovReg16Sreg(t *testing.T) {
 		t.Errorf("%+v", err)
 	}
 	expected := instMovReg16Sreg{dest: AX, src: ES}
-	if actual != expected {
-		t.Errorf("expected %v but actual %v", expected, actual)
-	}
-}
-
-func TestDecodeSubReg16Reg16(t *testing.T) {
-	// sub cx,ax
-	var reader io.Reader = bytes.NewReader([]byte{0x2b, 0xc8})
-	actual, _, _, err := decodeInst(reader)
-	if err != nil {
-		t.Errorf("%+v", err)
-	}
-	expected := instSubReg16Reg16{dest: CX, src: AX}
-	if actual != expected {
-		t.Errorf("expected %v but actual %v", expected, actual)
-	}
-}
-
-func TestDecodeSubReg8Reg8(t *testing.T) {
-	// sub al,al
-	var reader io.Reader = bytes.NewReader([]byte{0x2a, 0xc0})
-	actual, _, _, err := decodeInst(reader)
-	if err != nil {
-		t.Errorf("%+v", err)
-	}
-	expected := instSubReg8Reg8{dest: AL, src: AL}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
