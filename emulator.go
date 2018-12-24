@@ -647,6 +647,10 @@ type instXorReg16Reg16 struct {
 	src registerW
 }
 
+type instJae struct {
+	rel8 int8
+}
+
 func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
 	buf, err := memory.readByte(at)
 	if err != nil {
@@ -961,6 +965,14 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
 		}
 		inst = instJb{rel8: offset}
+
+	case 0x73:
+		imm8, err := memory.readInt8(currentAddress)
+		currentAddress++
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
+		}
+		inst = instJae{rel8: imm8}
 
 	// je rel8
 	// 74 cb
@@ -2957,6 +2969,13 @@ func execInstXorReg16Reg16(inst instXorReg16Reg16, state state) (state, error) {
 	return state, nil
 }
 
+func execInstJae(inst instJae, state state) (state, error) {
+	if state.isNotActiveCF() {
+		state.ip = word(int16(state.ip) + int16(inst.rel8))
+	}
+	return state, nil
+}
+
 func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
 	switch inst := shouldBeInst.(type) {
 	case instMov:
@@ -3055,6 +3074,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execInstDec(inst, state)
 	case instXorReg16Reg16:
 		return execInstXorReg16Reg16(inst, state)
+	case instJae:
+		return execInstJae(inst, state)
 	default:
 		return state, errors.Errorf("unknown inst: %T", shouldBeInst)
 	}

@@ -864,6 +864,19 @@ func TestDecodeXorReg16Reg16(t *testing.T) {
 	}
 }
 
+func TestDecodeJae(t *testing.T) {
+	// jae rel8
+	var reader io.Reader = bytes.NewReader([]byte{0x73, 0x16})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instJae{rel8: 0x16}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 // run
 
 func (code machineCode) withMov() machineCode {
