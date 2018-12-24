@@ -554,6 +554,10 @@ type instCall struct {
 	rel int16
 }
 
+type instCallAbsoluteIndirectMem16 struct {
+	offset word
+}
+
 type instRet struct {
 
 }
@@ -1807,6 +1811,30 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	case 0xfc:
 		inst = instCld{}
 
+	case 0xff:
+		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		currentAddress++
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
+		}
+
+		switch reg {
+		case 2:
+			if mod == 0 && rm == 6 {
+				offset, err := memory.readWord(currentAddress)
+				currentAddress += 2
+				if err != nil {
+					return inst, -1, nil, errors.Wrap(err, "failed to parse word")
+				}
+				inst = instCallAbsoluteIndirectMem16{offset: offset}
+			} else {
+				return inst, -1, nil, errors.Errorf("not yet implemented")
+			}
+		default:
+			return inst, -1, nil, errors.Errorf("illegal or not implemented for reg: %d", reg)
+		}
+
+
 	default:
 		return inst, -1, nil, errors.Errorf("unknown opcode: 0x%02x", rawOpcode)
 	}
@@ -2675,6 +2703,19 @@ func execCall(inst instCall, state state, memory *memory) (state, error) {
 	return state, nil
 }
 
+func execCallAbsoluteIndirectMem16(inst instCallAbsoluteIndirectMem16, state state, memory *memory) (state, error) {
+	state, err := state.pushWord(state.ip, memory)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execCallAbsoluteIndirectMem16")
+	}
+	callOffset, err := memory.readWord(state.realAddress(state.ds, inst.offset))
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execCallAbsoluteIndirectMem16")
+	}
+	state.ip = callOffset
+	return state, nil
+}
+
 func execRet(inst instRet, state state, memory *memory) (state, error) {
 	returnAddress, state, err := state.popWord(memory)
 	if err != nil {
@@ -3183,6 +3224,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execPopSreg(inst, state, memory)
 	case instCall:
 		return execCall(inst, state, memory)
+	case instCallAbsoluteIndirectMem16:
+		return execCallAbsoluteIndirectMem16(inst, state, memory)
 	case instRet:
 		return execRet(inst, state, memory)
 	case instJmpRel16:

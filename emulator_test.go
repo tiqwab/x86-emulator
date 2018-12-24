@@ -565,6 +565,19 @@ func TestDecodeCall(t *testing.T) {
 	}
 }
 
+func TestDecodeCallAbsoluteIndirectMem16(t *testing.T) {
+	// call r/m16
+	var reader io.Reader = bytes.NewReader([]byte{0xff, 0x16, 0x52, 0x00})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instCallAbsoluteIndirectMem16{offset: 0x0052}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 func TestDecodeRet(t *testing.T) {
 	// ret (near return)
 	var reader io.Reader = bytes.NewReader([]byte{0xc3})
@@ -598,20 +611,20 @@ func TestDecodeJmpRel16(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instJmpRel16{rel: -3}
+	expected := instJmpRel16{rel: 0x008a}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
 }
 
 func TestDecodeJmpRel8(t *testing.T) {
-	// jmp rel16
+	// jmp rel8
 	var reader io.Reader = bytes.NewReader([]byte{0xeb, 0xfd})
 	actual, _, _, err := decodeInst(reader)
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instJmpRel16{rel: 0xfd}
+	expected := instJmpRel16{rel:-3}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
@@ -1188,3 +1201,20 @@ func TestRunExeWithSampleCmain2(t *testing.T) {
 		t.Errorf("expect exitCode to be %d but actual %d", 8, exitCode)
 	}
 }
+
+/*
+func TestRunExeWithSampleCmain4(t *testing.T) {
+	file, err := os.Open("sample/cmain4.exe")
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	debug = debugT(true)
+	exitCode, _, err := RunExe(file)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	if exitCode != 8 {
+		t.Errorf("expect exitCode to be %d but actual %d", 8, exitCode)
+	}
+}
+*/
