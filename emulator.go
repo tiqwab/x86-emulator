@@ -437,6 +437,11 @@ type instMovReg8Imm8 struct {
 	imm8 uint8
 }
 
+type instMovReg8Reg8 struct {
+	dest registerB
+	src registerB
+}
+
 type instMovReg16Reg16 struct {
 	dest registerW
 	src registerW
@@ -570,6 +575,11 @@ type instCmpMem16Imm8 struct {
 type instCmpReg8Imm8 struct {
 	reg8 registerB
 	imm8 int8
+}
+
+type instCmpReg16Imm16 struct {
+	reg16 registerW
+	imm16 int16
 }
 
 type instCmpReg16Reg16 struct {
@@ -1028,6 +1038,35 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			return nil, -1, nil, errors.Errorf("unknown reg: %d", reg)
 		}
 
+	// cmp r/m16,imm16
+	// 81 /7 iw
+	case 0x81:
+		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		currentAddress++
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
+		}
+
+		if reg != 7 {
+			return inst, -1, nil, errors.Errorf("illegal reg: %d", reg)
+		}
+
+		switch mod {
+		case 3:
+			reg16, err := toRegisterW(uint8(rm))
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to parse registerW")
+			}
+			imm16, err := memory.readWord(currentAddress)
+			currentAddress += 2
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to parse word")
+			}
+			inst = instCmpReg16Imm16{reg16: reg16, imm16: int16(imm16)}
+		default:
+			return inst, -1, nil, errors.Errorf("illegal or not implementedf for mod: %d", mod)
+		}
+
 	// add r/m16, imm8
 	// 83 /5 -> sub r/m16, imm8
 	// 83 /7 ib ->  cmp r/m16,imm8
@@ -1117,7 +1156,8 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
 
-		if mod == 0 {
+		switch mod {
+		case 0:
 			src, err := toRegisterB(reg)
 			if err != nil {
 				return inst, -1, nil, errors.Errorf("illegal reg vlue for registerB: %d", reg)
@@ -1134,7 +1174,17 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			default:
 				return inst, -1, nil, errors.Errorf("not yet implmeneted for rm %d", rm)
 			}
-		} else {
+		case 3:
+			src, err := toRegisterB(reg)
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to parse registerB")
+			}
+			dest, err := toRegisterB(uint8(rm))
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to parse registerB")
+			}
+			inst = instMovReg8Reg8{dest: dest, src: src}
+		default:
 			return inst, -1, nil, errors.Errorf("not yet implemented for mod 0x%02x", mod)
 		}
 
@@ -2054,7 +2104,35 @@ func execMovReg8Imm8(inst instMovReg8Imm8, state state) (state, error) {
 	return state, nil
 }
 
-func execMovRegReg(inst instMovReg16Reg16, state state) (state, error) {
+func execMovReg8Reg8(inst instMovReg8Reg8, state state) (state, error) {
+	v, err := state.readByteGeneralReg(inst.src)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execMovReg8Reg8")
+	}
+	switch inst.dest {
+	case AL:
+		state.ax = word(uint16(v) + (0xff00) & uint16(state.ax))
+	case CL:
+		state.cx = word(uint16(v) + (0xff00) & uint16(state.cx))
+	case DL:
+		state.dx = word(uint16(v) + (0xff00) & uint16(state.dx))
+	case BL:
+		state.bx = word(uint16(v) + (0xff00) & uint16(state.bx))
+	case AH:
+		state.ax = word((uint16(v) << 8) + (0x00ff) & uint16(state.ax))
+	case CH:
+		state.cx = word((uint16(v) << 8) + (0x00ff) & uint16(state.cx))
+	case DH:
+		state.dx = word((uint16(v) << 8) + (0x00ff) & uint16(state.dx))
+	case BH:
+		state.bx = word((uint16(v) << 8) + (0x00ff) & uint16(state.bx))
+	default:
+		return state, errors.Errorf("unknown register: %v", inst.dest)
+	}
+	return state, nil
+}
+
+func execMovReg16Reg16(inst instMovReg16Reg16, state state) (state, error) {
 	v, err := state.readWordGeneralReg(inst.src)
 	if err != nil {
 		return state, errors.Wrap(err, "failed to get reg")
@@ -2573,6 +2651,24 @@ func execInstCmpReg16Reg16(inst instCmpReg16Reg16, state state) (state, error) {
 	return state, nil
 }
 
+func execInstCmpReg16Imm16(inst instCmpReg16Imm16, state state) (state, error) {
+	vReg, err := state.readWordGeneralReg(inst.reg16)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execInstCmpReg16Imm16")
+	}
+	if int16(vReg) == inst.imm16 {
+		state = state.setZF()
+		state = state.resetCF()
+	} else if int16(vReg) < inst.imm16 {
+		state = state.resetZF()
+		state = state.setCF()
+	} else {
+		state = state.resetZF()
+		state = state.resetCF()
+	}
+	return state, nil
+}
+
 func execInstJneRel8(inst instJneRel8, state state) (state, error) {
 	if state.isNotActiveZF() {
 		state.ip = word(int16(state.ip) + int16(inst.rel8))
@@ -2867,8 +2963,10 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execMov(inst, state)
 	case instMovReg8Imm8:
 		return execMovReg8Imm8(inst, state)
+	case instMovReg8Reg8:
+		return execMovReg8Reg8(inst, state)
 	case instMovReg16Reg16:
-		return execMovRegReg(inst, state)
+		return execMovReg16Reg16(inst, state)
 	case instMovSRegReg:
 		return execMovSRegReg(inst, state)
 	case instMovRegMemBP:
@@ -2927,6 +3025,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execInstCmpReg8Imm8(inst, state, memory)
 	case instCmpReg16Reg16:
 		return execInstCmpReg16Reg16(inst, state)
+	case instCmpReg16Imm16:
+		return execInstCmpReg16Imm16(inst, state)
 	case instJneRel8:
 		return execInstJneRel8(inst, state)
 	case instMovReg16Sreg:
@@ -2990,10 +3090,11 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		if s.shouldExit {
 			break
 		}
-		// x, _ := s.readWordGeneralReg(AX)
+		// x, _ := s.readWordGeneralReg(BX)
 		// debug.printf("0x%04x\n", x)
-		// v, _ = s.readWordGeneralReg(CX)
-		// debug.printf("0x%04x\n", v)
+		// debug.printf("0x%08x\n", s.eflags)
+		// y, _ := s.readWordGeneralReg(CX)
+		// debug.printf("0x%04x\n", y)
 		// z, _ := memory.readWord(s.realAddress(s.ds, 0x0042))
 		// debug.printf("0x%04x\n", z)
 	}
