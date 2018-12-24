@@ -328,6 +328,32 @@ func TestDecodeMovReg8WithDisp(t *testing.T) {
 	}
 }
 
+func TestDecodeMovMem16Imm16(t *testing.T) {
+	// mov word ptr 0x005e,0x2000
+	var reader io.Reader = bytes.NewReader([]byte{0xc7, 0x06, 0x5e, 0x00, 0x00, 0x20})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instMovMem16Imm16{offset: 0x005e, imm16: 0x2000}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
+func TestDecodeMovMem16Disp8Imm16(t *testing.T) {
+	// mov word ptr -2[bp], 0x0002
+	var reader io.Reader = bytes.NewReader([]byte{0xc7, 0x46, 0xfe, 0x02, 0x00})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instMovMem16Disp8Imm16{base: BP, disp8: -2, imm16: 0x0002}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 func TestDecodeShlAX(t *testing.T) {
 	// shl ax,1
 	var reader io.Reader = bytes.NewReader([]byte{0xc1, 0xe0, 0x01})
@@ -942,19 +968,6 @@ func TestDecodeJae(t *testing.T) {
 	}
 }
 
-func TestDecodeMovMem16Imm16(t *testing.T) {
-	// mov word ptr 0x005e,0x2000
-	var reader io.Reader = bytes.NewReader([]byte{0xc7, 0x06, 0x5e, 0x00, 0x00, 0x20})
-	actual, _, _, err := decodeInst(reader)
-	if err != nil {
-		t.Errorf("%+v", err)
-	}
-	expected := instMovMem16Imm16{offset: 0x005e, imm16: 0x2000}
-	if actual != expected {
-		t.Errorf("expected %v but actual %v", expected, actual)
-	}
-}
-
 // run
 
 func (code machineCode) withMov() machineCode {
@@ -1211,6 +1224,21 @@ func TestRunExeWithSampleCmain2(t *testing.T) {
 		t.Errorf("%+v", err)
 	}
 	if exitCode != 8 {
+		t.Errorf("expect exitCode to be %d but actual %d", 8, exitCode)
+	}
+}
+
+func TestRunExeWithSampleCmain5(t *testing.T) {
+	file, err := os.Open("sample/cmain5.exe")
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	debug = debugT(true)
+	exitCode, _, err := RunExe(file)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	if exitCode != 0 {
 		t.Errorf("expect exitCode to be %d but actual %d", 8, exitCode)
 	}
 }

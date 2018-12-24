@@ -493,6 +493,12 @@ type instMovMem16Imm16 struct {
 	imm16 int16
 }
 
+type instMovMem16Disp8Imm16 struct {
+	base registerW
+	disp8 int8
+	imm16 int16
+}
+
 type instShl struct {
 	register registerW
 	imm uint8
@@ -1715,6 +1721,23 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			default:
 				return nil, -1, nil, errors.Errorf("illegal or not implemented for rm: %d", rm)
 			}
+		case 1:
+			switch rm {
+			case 6:
+				disp8, err := memory.readInt8(currentAddress)
+				currentAddress++
+				if err != nil {
+					return nil, -1, nil, errors.Wrap(err, "failed to parse word")
+				}
+				imm16, err := memory.readInt16(currentAddress)
+				currentAddress += 2
+				if err != nil {
+					return nil, -1, nil, errors.Wrap(err, "failed to parse imm16")
+				}
+				inst = instMovMem16Disp8Imm16{base: BP, disp8: disp8, imm16: imm16}
+			default:
+				return nil, -1, nil, errors.Errorf("illegal or not implemented for rm: %d", rm)
+			}
 		default:
 			return nil, -1, nil, errors.Errorf("illegal or not implemented for mod: %d", mod)
 		}
@@ -2480,6 +2503,32 @@ func execMovReg16Sreg(inst instMovReg16Sreg, state state) (state, error) {
 
 func execMovMem16Imm16(inst instMovMem16Imm16, state state, memory *memory) (state, error) {
 	err := memory.writeWord(state.realAddress(state.ds, inst.offset), word(inst.imm16))
+	return state, err
+}
+
+func execMovMem16Disp8Imm16(inst instMovMem16Disp8Imm16, state state, memory *memory) (state, error) {
+	var offset word
+	switch inst.base {
+	case AX:
+		offset = state.ax + word(inst.disp8)
+	case CX:
+		offset = state.cx + word(inst.disp8)
+	case DX:
+		offset = state.dx + word(inst.disp8)
+	case BX:
+		offset = state.bx + word(inst.disp8)
+	case SP:
+		offset = state.sp + word(inst.disp8)
+	case BP:
+		offset = state.bp + word(inst.disp8)
+	case SI:
+		offset = state.si + word(inst.disp8)
+	case DI:
+		offset = state.di + word(inst.disp8)
+	default:
+		return state, errors.Errorf("illegal base: %d", inst.base)
+	}
+	err := memory.writeWord(state.realAddress(state.ds, offset), word(inst.imm16))
 	return state, err
 }
 
@@ -3268,6 +3317,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execMovReg16Sreg(inst, state)
 	case instMovMem16Imm16:
 		return execMovMem16Imm16(inst, state, memory)
+	case instMovMem16Disp8Imm16:
+		return execMovMem16Disp8Imm16(inst, state, memory)
 	case instShl:
 		return execShl(inst, state)
 	case instAdd:
@@ -3385,12 +3436,12 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		if s.shouldExit {
 			break
 		}
-		x, _ := s.readWordGeneralReg(AX)
-		debug.printf("0x%04x\n", x)
+		// x, _ := s.readWordGeneralReg(BP)
+		// debug.printf("0x%04x\n", x)
 		// debug.printf("0x%08x\n", s.eflags)
 		// y, _ := s.readWordSreg(DS)
 		// debug.printf("0x%04x\n", y)
-		// z, _ := memory.readWord(s.realAddress(s.ds, 0x005e))
+		// z, _ := memory.readWord(s.realAddress(s.ds, x - 2))
 		// debug.printf("0x%04x\n", z)
 	}
 
