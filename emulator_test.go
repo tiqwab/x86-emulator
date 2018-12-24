@@ -192,7 +192,7 @@ func TestDecodeMovAX(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instMov{dest: AX, imm: 0x0001}
+	expected := instMovReg16Imm16{dest: AX, imm: 0x0001}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
@@ -205,7 +205,124 @@ func TestDecodeMovCX(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instMov{dest: CX, imm: 0x0001}
+	expected := instMovReg16Imm16{dest: CX, imm: 0x0001}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
+func TestDecodeMovDs(t *testing.T) {
+	// mov ds,ax
+	var reader io.Reader = bytes.NewReader([]byte{0x8e, 0xd8})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instMovSRegReg{dest: DS, src: AX}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
+func TestDecodeMovReg8Imm8(t *testing.T) {
+	// mov ah,09h
+	var reader io.Reader = bytes.NewReader([]byte{0xb4, 0x09})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instMovReg8Imm8{dest: AH, imm8: 0x09}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
+func TestDecodeMovMem16Reg16WithSegmentOverride(t *testing.T) {
+	// mov word ptr es:0038, bx
+	var reader io.Reader = bytes.NewReader([]byte{0x26, 0x89, 0x1e, 0x38, 0x00})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instMovMem16Reg16{offset: 0x0038, src: BX}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
+func TestDecodeMovReg16Mem16WithSegmentOverride(t *testing.T) {
+	// mov word ptr es:0038, bx
+	var reader io.Reader = bytes.NewReader([]byte{0x26, 0x8b, 0x16, 0xb0, 0x00})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instMovReg16Mem16{dest: DX, offset: 0x00b0}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
+func TestDecodeMovMem16SregWithSegmentOverride(t *testing.T) {
+	// mov word ptr es:0032,ds
+	var reader io.Reader = bytes.NewReader([]byte{0x26, 0x8c, 0x1e, 0x32, 0x00})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instMovMem16Sreg{offset: 0x0032, src: DS}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
+func TestDecodeMovAxMoffs16WithSegmentOverride(t *testing.T) {
+	// mov ax,word ptr es:0032
+	var reader io.Reader = bytes.NewReader([]byte{0x26, 0xa1, 0x32, 0x00})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instMovReg16Mem16{dest: AX, offset: 0x0032}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
+func TestDecodeMovMoffs16AlWithSegmentOverride(t *testing.T) {
+	// mov byte ptr es:0034,al
+	var reader io.Reader = bytes.NewReader([]byte{0x26, 0xa2, 0x34, 0x00})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instMovMem8Reg8{offset: 0x0034, src: AL}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
+func TestDecodeMovMMoffs16Ax(t *testing.T) {
+	// mov word ptr 0042,ax
+	var reader io.Reader = bytes.NewReader([]byte{0xa3, 0x42, 0x00})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instMovMem16Reg16{offset: 0x0042, src: AX}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
+func TestDecodeMovReg8WithDisp(t *testing.T) {
+	// mov cl, byte ptr -01[di]
+	var reader io.Reader = bytes.NewReader([]byte{0x8a, 0x4d, 0xff})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instMovReg8MemDisp8{dest: CL, base: DI, disp8: -1}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
@@ -271,32 +388,6 @@ func TestDecodeSubAXImm(t *testing.T) {
 		t.Errorf("%+v", err)
 	}
 	expected := instSub{dest: SP, imm: 0x0002}
-	if actual != expected {
-		t.Errorf("expected %v but actual %v", expected, actual)
-	}
-}
-
-func TestDecodeMovDs(t *testing.T) {
-	// mov ds,ax
-	var reader io.Reader = bytes.NewReader([]byte{0x8e, 0xd8})
-	actual, _, _, err := decodeInst(reader)
-	if err != nil {
-		t.Errorf("%+v", err)
-	}
-	expected := instMovSRegReg{dest: DS, src: AX}
-	if actual != expected {
-		t.Errorf("expected %v but actual %v", expected, actual)
-	}
-}
-
-func TestDecodeMovReg8Imm8(t *testing.T) {
-	// mov ah,09h
-	var reader io.Reader = bytes.NewReader([]byte{0xb4, 0x09})
-	actual, _, _, err := decodeInst(reader)
-	if err != nil {
-		t.Errorf("%+v", err)
-	}
-	expected := instMovReg8Imm8{dest: AH, imm8: 0x09}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
@@ -513,45 +604,6 @@ func TestDecodeAndMem8Reg8(t *testing.T) {
 	}
 }
 
-func TestDecodeMovMem16Reg16WithSegmentOverride(t *testing.T) {
-	// mov word ptr es:0038, bx
-	var reader io.Reader = bytes.NewReader([]byte{0x26, 0x89, 0x1e, 0x38, 0x00})
-	actual, _, _, err := decodeInst(reader)
-	if err != nil {
-		t.Errorf("%+v", err)
-	}
-	expected := instMovMem16Reg16{offset: 0x0038, src: BX}
-	if actual != expected {
-		t.Errorf("expected %v but actual %v", expected, actual)
-	}
-}
-
-func TestDecodeMovReg16Mem16WithSegmentOverride(t *testing.T) {
-	// mov word ptr es:0038, bx
-	var reader io.Reader = bytes.NewReader([]byte{0x26, 0x8b, 0x16, 0xb0, 0x00})
-	actual, _, _, err := decodeInst(reader)
-	if err != nil {
-		t.Errorf("%+v", err)
-	}
-	expected := instMovReg16Mem16{dest: DX, offset: 0x00b0}
-	if actual != expected {
-		t.Errorf("expected %v but actual %v", expected, actual)
-	}
-}
-
-func TestDecodeMovMem16SregWithSegmentOverride(t *testing.T) {
-	// mov word ptr es:0032,ds
-	var reader io.Reader = bytes.NewReader([]byte{0x26, 0x8c, 0x1e, 0x32, 0x00})
-	actual, _, _, err := decodeInst(reader)
-	if err != nil {
-		t.Errorf("%+v", err)
-	}
-	expected := instMovMem16Sreg{offset: 0x0032, src: DS}
-	if actual != expected {
-		t.Errorf("expected %v but actual %v", expected, actual)
-	}
-}
-
 func TestDecodeAddReg16Reg16(t *testing.T) {
 	// add r16,r/m16
 	var reader io.Reader = bytes.NewReader([]byte{0x03, 0xdc})
@@ -705,58 +757,6 @@ func TestDecodeJb(t *testing.T) {
 	expected := instJb{rel8: 0x0b}
 	if actual != expected {
 		t.Errorf("expeted %v but actual %v", expected, actual)
-	}
-}
-
-func TestDecodeMovAxMoffs16WithSegmentOverride(t *testing.T) {
-	// mov ax,word ptr es:0032
-	var reader io.Reader = bytes.NewReader([]byte{0x26, 0xa1, 0x32, 0x00})
-	actual, _, _, err := decodeInst(reader)
-	if err != nil {
-		t.Errorf("%+v", err)
-	}
-	expected := instMovReg16Mem16{dest: AX, offset: 0x0032}
-	if actual != expected {
-		t.Errorf("expected %v but actual %v", expected, actual)
-	}
-}
-
-func TestDecodeMovMoffs16AlWithSegmentOverride(t *testing.T) {
-	// mov byte ptr es:0034,al
-	var reader io.Reader = bytes.NewReader([]byte{0x26, 0xa2, 0x34, 0x00})
-	actual, _, _, err := decodeInst(reader)
-	if err != nil {
-		t.Errorf("%+v", err)
-	}
-	expected := instMovMem8Reg8{offset: 0x0034, src: AL}
-	if actual != expected {
-		t.Errorf("expected %v but actual %v", expected, actual)
-	}
-}
-
-func TestDecodeMovMMoffs16Ax(t *testing.T) {
-	// mov word ptr 0042,ax
-	var reader io.Reader = bytes.NewReader([]byte{0xa3, 0x42, 0x00})
-	actual, _, _, err := decodeInst(reader)
-	if err != nil {
-		t.Errorf("%+v", err)
-	}
-	expected := instMovMem16Reg16{offset: 0x0042, src: AX}
-	if actual != expected {
-		t.Errorf("expected %v but actual %v", expected, actual)
-	}
-}
-
-func TestDecodeMovReg8WithDisp(t *testing.T) {
-	// mov cl, byte ptr -01[di]
-	var reader io.Reader = bytes.NewReader([]byte{0x8a, 0x4d, 0xff})
-	actual, _, _, err := decodeInst(reader)
-	if err != nil {
-		t.Errorf("%+v", err)
-	}
-	expected := instMovReg8MemDisp8{dest: CL, base: DI, disp8: -1}
-	if actual != expected {
-		t.Errorf("expected %v but actual %v", expected, actual)
 	}
 }
 

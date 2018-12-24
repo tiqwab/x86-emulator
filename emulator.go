@@ -427,7 +427,7 @@ type instInt struct {
 	operand uint8
 }
 
-type instMov struct {
+type instMovReg16Imm16 struct {
 	dest registerW
 	imm word
 }
@@ -461,6 +461,31 @@ type instMovReg8MemDisp8 struct {
 	dest registerB
 	base registerW
 	disp8 int8
+}
+
+type instMovMem16Reg16 struct {
+	offset word
+	src registerW
+}
+
+type instMovMem8Reg8 struct {
+	offset word
+	src registerB
+}
+
+type instMovReg16Mem16 struct {
+	dest registerW
+	offset word
+}
+
+type instMovMem16Sreg struct {
+	offset word
+	src registerS
+}
+
+type instMovReg16Sreg struct {
+	dest registerW
+	src registerS
 }
 
 type instShl struct {
@@ -531,26 +556,6 @@ type instAndMem8Reg8 struct {
 	reg8 registerB
 }
 
-type instMovMem16Reg16 struct {
-	offset word
-	src registerW
-}
-
-type instMovMem8Reg8 struct {
-	offset word
-	src registerB
-}
-
-type instMovReg16Mem16 struct {
-	dest registerW
-	offset word
-}
-
-type instMovMem16Sreg struct {
-	offset word
-	src registerS
-}
-
 type instAddReg16Reg16 struct {
 	dest registerW
 	src registerW
@@ -593,11 +598,6 @@ type instCmpReg16Reg16 struct {
 
 type instJneRel8 struct {
 	rel8 int8
-}
-
-type instMovReg16Sreg struct {
-	dest registerW
-	src registerS
 }
 
 type instSubReg16Reg16 struct {
@@ -1553,7 +1553,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
-		inst = instMov{dest: AX, imm: imm}
+		inst = instMovReg16Imm16{dest: AX, imm: imm}
 	case 0xb9:
 		// cx
 		imm, err := memory.readWord(currentAddress)
@@ -1561,7 +1561,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
-		inst = instMov{dest: CX, imm: imm}
+		inst = instMovReg16Imm16{dest: CX, imm: imm}
 	case 0xba:
 		// dx
 		imm, err := memory.readWord(currentAddress)
@@ -1569,7 +1569,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
-		inst = instMov{dest: DX, imm: imm}
+		inst = instMovReg16Imm16{dest: DX, imm: imm}
 	case 0xbb:
 		// bx
 		imm, err := memory.readWord(currentAddress)
@@ -1577,7 +1577,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
-		inst = instMov{dest: BX, imm: imm}
+		inst = instMovReg16Imm16{dest: BX, imm: imm}
 	case 0xbc:
 		// sp
 		imm, err := memory.readWord(currentAddress)
@@ -1585,7 +1585,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
-		inst = instMov{dest: SP, imm: imm}
+		inst = instMovReg16Imm16{dest: SP, imm: imm}
 	case 0xbd:
 		// bp
 		imm, err := memory.readWord(currentAddress)
@@ -1593,7 +1593,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
-		inst = instMov{dest: BP, imm: imm}
+		inst = instMovReg16Imm16{dest: BP, imm: imm}
 	case 0xbe:
 		// si
 		imm, err := memory.readWord(currentAddress)
@@ -1601,7 +1601,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
-		inst = instMov{dest: SI, imm: imm}
+		inst = instMovReg16Imm16{dest: SI, imm: imm}
 	case 0xbf:
 		// di
 		imm, err := memory.readWord(currentAddress)
@@ -1609,7 +1609,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
-		inst = instMov{dest: DI, imm: imm}
+		inst = instMovReg16Imm16{dest: DI, imm: imm}
 
 	// shl r/m16,imm8
 	// FIXME: handle memory address as source
@@ -2101,7 +2101,7 @@ func (s state) popWord(memory *memory) (word, state, error) {
 	return w, s, nil
 }
 
-func execMov(inst instMov, state state) (state, error) {
+func execMovReg16Imm16(inst instMovReg16Imm16, state state) (state, error) {
 	switch inst.dest {
 	case AX:
 		state.ax = inst.imm
@@ -2253,6 +2253,118 @@ func execMovReg8MemDisp8(inst instMovReg8MemDisp8, state state, memory *memory) 
 	state, err = state.writeByteGeneralReg(inst.dest, v)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execMovReg8MemDisp8")
+	}
+	return state, nil
+}
+
+func execMovMem16Reg16(inst instMovMem16Reg16, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
+	initDS := state.ds
+	if segmentOverride != nil {
+		switch segmentOverride.sreg {
+		case ES:
+			state.ds = state.es
+		default:
+			return state, errors.Errorf("not yet implemented or illegal sreg: %#v", segmentOverride.sreg)
+		}
+	}
+
+	v, err := state.readWordGeneralReg(inst.src)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execMovMem16Reg16")
+	}
+
+	err = memory.writeWord(realAddress(state.ds, inst.offset), v)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execMovMem16Reg16")
+	}
+
+	state.ds = initDS
+	return state, nil
+}
+
+func execMovMem8Reg8(inst instMovMem8Reg8, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
+	initDS := state.ds
+	if segmentOverride != nil {
+		switch segmentOverride.sreg {
+		case ES:
+			state.ds = state.es
+		default:
+			return state, errors.Errorf("not yet implemented or illegal sreg: %#v", segmentOverride.sreg)
+		}
+	}
+
+	v, err := state.readByteGeneralReg(inst.src)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execMovMem8Reg8")
+	}
+
+	err = memory.writeByte(realAddress(state.ds, inst.offset), v)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execMovMem8Reg8")
+	}
+
+	state.ds = initDS
+	return state, nil
+}
+
+func execMovReg16Mem16(inst instMovReg16Mem16, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
+	initDS := state.ds
+	if segmentOverride != nil {
+		switch segmentOverride.sreg {
+		case ES:
+			state.ds = state.es
+		default:
+			return state, errors.Errorf("not yet implemented or illegal sreg: %#v", segmentOverride.sreg)
+		}
+	}
+
+	v, err := memory.readWord(realAddress(state.ds, inst.offset))
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execMovReg16Mem16")
+	}
+
+	state, err = state.writeWordGeneralReg(inst.dest, v)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execMovReg16Mem16")
+	}
+
+	state.ds = initDS
+	return state, nil
+}
+
+func execMovMem16Sreg(inst instMovMem16Sreg, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
+	initDS := state.ds
+	if segmentOverride != nil {
+		switch segmentOverride.sreg {
+		case ES:
+			state.ds = state.es
+		default:
+			return state, errors.Errorf("not yet implemented or illegal sreg: %#v", segmentOverride.sreg)
+		}
+	}
+
+	v, err := state.readWordSreg(inst.src)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execMovMem16Sreg")
+	}
+
+	err = memory.writeWord(state.realAddress(state.ds, inst.offset), v)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execMovMem16Sreg")
+	}
+
+	state.ds = initDS
+	return state, nil
+}
+
+func execMovReg16Sreg(inst instMovReg16Sreg, state state) (state, error) {
+	v, err := state.readWordSreg(inst.src)
+	if err != nil {
+		return state, errors.Errorf("failed in execMovReg16Sreg")
+	}
+	state, err = state.writeWordGeneralReg(inst.dest, v)
+	if err != nil {
+		return state, errors.Errorf("failed in execMovReg16Sreg")
 	}
 	return state, nil
 }
@@ -2480,106 +2592,6 @@ func execAndMem8Reg8(inst instAndMem8Reg8, state state, memory *memory) (state, 
 	return state, nil
 }
 
-func execMovMem16Reg16(inst instMovMem16Reg16, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
-	initDS := state.ds
-	if segmentOverride != nil {
-		switch segmentOverride.sreg {
-		case ES:
-			state.ds = state.es
-		default:
-			return state, errors.Errorf("not yet implemented or illegal sreg: %#v", segmentOverride.sreg)
-		}
-	}
-
-	v, err := state.readWordGeneralReg(inst.src)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execMovMem16Reg16")
-	}
-
-	err = memory.writeWord(realAddress(state.ds, inst.offset), v)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execMovMem16Reg16")
-	}
-
-	state.ds = initDS
-	return state, nil
-}
-
-func execMovMem8Reg8(inst instMovMem8Reg8, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
-	initDS := state.ds
-	if segmentOverride != nil {
-		switch segmentOverride.sreg {
-		case ES:
-			state.ds = state.es
-		default:
-			return state, errors.Errorf("not yet implemented or illegal sreg: %#v", segmentOverride.sreg)
-		}
-	}
-
-	v, err := state.readByteGeneralReg(inst.src)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execMovMem8Reg8")
-	}
-
-	err = memory.writeByte(realAddress(state.ds, inst.offset), v)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execMovMem8Reg8")
-	}
-
-	state.ds = initDS
-	return state, nil
-}
-
-func execMovReg16Mem16(inst instMovReg16Mem16, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
-	initDS := state.ds
-	if segmentOverride != nil {
-		switch segmentOverride.sreg {
-		case ES:
-			state.ds = state.es
-		default:
-			return state, errors.Errorf("not yet implemented or illegal sreg: %#v", segmentOverride.sreg)
-		}
-	}
-
-	v, err := memory.readWord(realAddress(state.ds, inst.offset))
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execMovReg16Mem16")
-	}
-
-	state, err = state.writeWordGeneralReg(inst.dest, v)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execMovReg16Mem16")
-	}
-
-	state.ds = initDS
-	return state, nil
-}
-
-func execMovMem16Sreg(inst instMovMem16Sreg, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
-	initDS := state.ds
-	if segmentOverride != nil {
-		switch segmentOverride.sreg {
-		case ES:
-			state.ds = state.es
-		default:
-			return state, errors.Errorf("not yet implemented or illegal sreg: %#v", segmentOverride.sreg)
-		}
-	}
-
-	v, err := state.readWordSreg(inst.src)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execMovMem16Sreg")
-	}
-
-	err = memory.writeWord(state.realAddress(state.ds, inst.offset), v)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execMovMem16Sreg")
-	}
-
-	state.ds = initDS
-	return state, nil
-}
-
 func execAddReg16Reg16(inst instAddReg16Reg16, state state) (state, error) {
 	srcValue, err := state.readWordGeneralReg(inst.src)
 	if err != nil {
@@ -2732,18 +2744,6 @@ func execInstCmpReg16Imm16(inst instCmpReg16Imm16, state state) (state, error) {
 func execInstJneRel8(inst instJneRel8, state state) (state, error) {
 	if state.isNotActiveZF() {
 		state.ip = word(int16(state.ip) + int16(inst.rel8))
-	}
-	return state, nil
-}
-
-func execInstMovReg16Sreg(inst instMovReg16Sreg, state state) (state, error) {
-	v, err := state.readWordSreg(inst.src)
-	if err != nil {
-		return state, errors.Errorf("failed in execInstMovReg16Sreg")
-	}
-	state, err = state.writeWordGeneralReg(inst.dest, v)
-	if err != nil {
-		return state, errors.Errorf("failed in execInstMovReg16Sreg")
 	}
 	return state, nil
 }
@@ -3026,8 +3026,8 @@ func execInstJae(inst instJae, state state) (state, error) {
 
 func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
 	switch inst := shouldBeInst.(type) {
-	case instMov:
-		return execMov(inst, state)
+	case instMovReg16Imm16:
+		return execMovReg16Imm16(inst, state)
 	case instMovReg8Imm8:
 		return execMovReg8Imm8(inst, state)
 	case instMovReg8Reg8:
@@ -3040,6 +3040,16 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execMovRegMemBP(inst, state, memory)
 	case instMovReg8MemDisp8:
 		return execMovReg8MemDisp8(inst, state, memory)
+	case instMovMem16Reg16:
+		return execMovMem16Reg16(inst, state, memory, segmentOverride)
+	case instMovMem8Reg8:
+		return execMovMem8Reg8(inst, state, memory, segmentOverride)
+	case instMovReg16Mem16:
+		return execMovReg16Mem16(inst, state, memory, segmentOverride)
+	case instMovMem16Sreg:
+		return execMovMem16Sreg(inst, state, memory, segmentOverride)
+	case instMovReg16Sreg:
+		return execMovReg16Sreg(inst, state)
 	case instShl:
 		return execShl(inst, state)
 	case instAdd:
@@ -3072,14 +3082,6 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execAndReg8Imm8(inst, state, memory)
 	case instAndMem8Reg8:
 		return execAndMem8Reg8(inst, state, memory)
-	case instMovMem16Reg16:
-		return execMovMem16Reg16(inst, state, memory, segmentOverride)
-	case instMovMem8Reg8:
-		return execMovMem8Reg8(inst, state, memory, segmentOverride)
-	case instMovReg16Mem16:
-		return execMovReg16Mem16(inst, state, memory, segmentOverride)
-	case instMovMem16Sreg:
-		return execMovMem16Sreg(inst, state, memory, segmentOverride)
 	case instAddReg16Reg16:
 		return execAddReg16Reg16(inst, state)
 	case instShrReg16Imm:
@@ -3098,8 +3100,6 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execInstCmpReg16Imm16(inst, state)
 	case instJneRel8:
 		return execInstJneRel8(inst, state)
-	case instMovReg16Sreg:
-		return execInstMovReg16Sreg(inst, state)
 	case instSubReg16Reg16:
 		return execInstSubReg16Reg16(inst, state)
 	case instSubReg8Reg8:
