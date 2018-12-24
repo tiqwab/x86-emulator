@@ -1770,6 +1770,15 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		}
 		inst = instJmpRel16{rel: rel}
 
+	// jmp rel8
+	case 0xeb:
+		rel, err := memory.readInt8(currentAddress)
+		currentAddress += 1
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to parse int16")
+		}
+		inst = instJmpRel16{rel: int16(rel)}
+
 	case 0xf3:
 		stringOperation, err := memory.readByte(currentAddress)
 		currentAddress++
@@ -3259,8 +3268,8 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		if s.shouldExit {
 			break
 		}
-		x, _ := s.readWordGeneralReg(SP)
-		debug.printf("0x%04x\n", x)
+		// x, _ := s.readWordGeneralReg(SP)
+		// debug.printf("0x%04x\n", x)
 		// debug.printf("0x%08x\n", s.eflags)
 		// y, _ := s.readWordSreg(DS)
 		// debug.printf("0x%04x\n", y)

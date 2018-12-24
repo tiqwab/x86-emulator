@@ -598,7 +598,20 @@ func TestDecodeJmpRel16(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instJmpRel16{rel: 0x008a}
+	expected := instJmpRel16{rel: -3}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
+func TestDecodeJmpRel8(t *testing.T) {
+	// jmp rel16
+	var reader io.Reader = bytes.NewReader([]byte{0xeb, 0xfd})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instJmpRel16{rel: 0xfd}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
@@ -1166,7 +1179,7 @@ func TestRunExeWithSampleCmain2(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	debug = debugT(true)
+	// debug = debugT(true)
 	exitCode, _, err := RunExe(file)
 	if err != nil {
 		t.Errorf("%+v", err)
