@@ -409,6 +409,19 @@ func TestDecodePopGeneralRegisters(t *testing.T) {
 	}
 }
 
+func TestDecodePopDs(t *testing.T) {
+	// pop ds
+	var reader io.Reader = bytes.NewReader([]byte{0x1f})
+	actual, _, _, err := decodeInst(reader)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	expected := instPopSreg{dest: DS}
+	if actual != expected {
+		t.Errorf("expected %v but actual %v", expected, actual)
+	}
+}
+
 func TestDecodeCall(t *testing.T) {
 	// call rel16
 	var reader io.Reader = bytes.NewReader([]byte{0xe8, 0xdc, 0xff})

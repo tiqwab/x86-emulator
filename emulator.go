@@ -501,6 +501,10 @@ type instPop struct {
 	dest registerW
 }
 
+type instPopSreg struct {
+	dest registerS
+}
+
 type instCall struct {
 	rel int16
 }
@@ -714,6 +718,10 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// 1e
 	case 0x1e:
 		inst = instPushSreg{src: DS}
+
+	case 0x1f:
+		inst = instPopSreg{dest: DS}
+
 	// and r/m64,r8
 	// 20 /r
 	case 0x20:
@@ -2050,6 +2058,31 @@ func (s state) writeWordGeneralReg(r registerW, w word) (state, error) {
 	}
 }
 
+func (s state) writeWordSreg(r registerS, w word) (state, error) {
+	switch r {
+	case ES:
+		s.es = w
+		return s, nil
+	case CS:
+		s.cs = w
+		return s, nil
+	case SS:
+		s.ss = w
+		return s, nil
+	case DS:
+		s.ds = w
+		return s, nil
+		/*
+	case FS:
+		return s.fs, nil
+	case GS:
+		return s.gs, nil
+		*/
+	default:
+		return s, errors.Errorf("illegal number for registerS:%d", r)
+	}
+}
+
 func (s state) pushWord(w word, memory *memory) (state, error) {
 	s.sp -= 2
 	err := memory.writeWord(s.realAddress(s.ss, s.sp), w)
@@ -2364,9 +2397,24 @@ func execPushSreg(inst instPushSreg, state state, memory *memory) (state, error)
 
 func execPop(inst instPop, state state, memory *memory) (state, error) {
 	w, state, err := state.popWord(memory)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execPop")
+	}
 	state, err = state.writeWordGeneralReg(inst.dest, w)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execPop")
+	}
+	return state, nil
+}
+
+func execPopSreg(inst instPopSreg, state state, memory *memory) (state, error) {
+	w, state, err := state.popWord(memory)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execPopSreg")
+	}
+	state, err = state.writeWordSreg(inst.dest, w)
+	if err != nil {
+		return state, errors.Wrap(err, "failed in execPopSreg")
 	}
 	return state, nil
 }
@@ -3010,6 +3058,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execPushSreg(inst, state, memory)
 	case instPop:
 		return execPop(inst, state, memory)
+	case instPopSreg:
+		return execPopSreg(inst, state, memory)
 	case instCall:
 		return execCall(inst, state, memory)
 	case instRet:
@@ -3114,7 +3164,7 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		// x, _ := s.readWordGeneralReg(BX)
 		// debug.printf("0x%04x\n", x)
 		// debug.printf("0x%08x\n", s.eflags)
-		// y, _ := s.readWordGeneralReg(CX)
+		// y, _ := s.readWordSreg(DS)
 		// debug.printf("0x%04x\n", y)
 		// z, _ := memory.readWord(s.realAddress(s.ds, 0x0042))
 		// debug.printf("0x%04x\n", z)
