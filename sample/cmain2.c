@@ -1,4 +1,4 @@
-// wasm -ms -ecc greeting.asm
+// wasm -ms greeting.asm
 // wcl -ecc -ms -s cmain2.c greeting.obj
 
 void greeting();
