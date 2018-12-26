@@ -1,5 +1,5 @@
 ```
 $ go build sample/emulate.go
-$ ./exp_1_emu sample/exp_4.exe
+$ cat sample/hll.exe | ./emulate
 Hello world!
 ```
