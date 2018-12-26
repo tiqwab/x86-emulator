@@ -1257,3 +1257,19 @@ func TestRunExeWithSampleCmain5(t *testing.T) {
 		t.Errorf("expect exitCode to be %d but actual %d", 8, exitCode)
 	}
 }
+
+// hello world without libc
+func TestRunExeWithSampleHll(t *testing.T) {
+	file, err := os.Open("sample/hll.exe")
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	// debug = debugT(true)
+	exitCode, _, err := RunExe(file)
+	if err != nil {
+		t.Errorf("%+v", err)
+	}
+	if exitCode != 0 {
+		t.Errorf("expect exitCode to be %d but actual %d", 0, exitCode)
+	}
+}
