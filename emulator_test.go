@@ -1,14 +1,22 @@
 package x86_emulator
 
 import (
-	"testing"
 	"bytes"
 	"io"
-	"os"
 	"io/ioutil"
-	)
+	"os"
+	"testing"
+)
 
 type machineCode []byte
+
+func TestRealAddress(t *testing.T) {
+	// maximum address of real mode
+	x := newAddress(0xffff, 0xffff)
+	if x.realAddress() != 0x10ffef {
+		t.Errorf("expected %06x but actual %06x", 0x10ffef, x.realAddress())
+	}
+}
 
 // decode
 
@@ -503,7 +511,7 @@ func TestDecodeJmpRel8(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instJmpRel16{rel:-3}
+	expected := instJmpRel16{rel: -3}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
@@ -843,7 +851,6 @@ func rawHeaderForRunExe() machineCode {
 	}
 }
 
-
 func TestRunExe(t *testing.T) {
 	_, _, err := RunExe(bytes.NewReader(rawHeaderForRunExe().withMov().withInt21_4c()))
 	if err != nil {
@@ -917,23 +924,23 @@ func rawHeaderForTestInt21_09() machineCode {
 	// (1) relocation items
 	// (2) item of relocation table
 	return []byte{
-	//                                      <--(1)--->
+		//                                      <--(1)--->
 		0x4d, 0x5a, 0x4f, 0x00, 0x01, 0x00, 0x01, 0x00, 0x03, 0x00, 0x01, 0x01, 0xff, 0xff, 0x02, 0x00,
 		0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	//  <--(2)--->
+		//  <--(2)--->
 		0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	}
 }
 
 func TestInt21_09(t *testing.T) {
 	b := rawHeaderForTestInt21_09()
-	b = append(b, []byte{0xb8, 0x01, 0x00}...) // mov ax,seg msg
-	b = append(b, []byte{0x8e, 0xd8}...) // mov ds,ax
-	b = append(b, []byte{0xb4, 0x09}...) // mov ah,09h
+	b = append(b, []byte{0xb8, 0x01, 0x00}...)       // mov ax,seg msg
+	b = append(b, []byte{0x8e, 0xd8}...)             // mov ds,ax
+	b = append(b, []byte{0xb4, 0x09}...)             // mov ah,09h
 	b = append(b, []byte{0x8d, 0x16, 0x02, 0x00}...) // lea dx,msg
-	b = append(b, []byte{0xcd, 0x21}...) // int 21h
-	b = append(b, []byte{0xb8, 0x00, 0x4c}...) // mov ax,4c00h
-	b = append(b, []byte{0xcd, 0x21}...) // int 21h
+	b = append(b, []byte{0xcd, 0x21}...)             // int 21h
+	b = append(b, []byte{0xb8, 0x00, 0x4c}...)       // mov ax,4c00h
+	b = append(b, []byte{0xcd, 0x21}...)             // int 21h
 	b = append(b, []byte("Hello world!$")...)
 
 	tempFile, err := ioutil.TempFile("", "TestInt21_09")
@@ -982,12 +989,12 @@ func TestPushAndPop(t *testing.T) {
 	b := rawHeaderForTestPush()
 	b = append(b, []byte{0xb8, 0x35, 0x10}...) // mov ax, 0x1035
 	b = append(b, []byte{0xb9, 0x36, 0x20}...) // mov cx, 0x2036
-	b = append(b, []byte{0x50}...) // push ax
-	b = append(b, []byte{0x51}...) // push cx
-	b = append(b, []byte{0x5b}...) // pop bx
-	b = append(b, []byte{0x5a}...) // pop dx
+	b = append(b, []byte{0x50}...)             // push ax
+	b = append(b, []byte{0x51}...)             // push cx
+	b = append(b, []byte{0x5b}...)             // pop bx
+	b = append(b, []byte{0x5a}...)             // pop dx
 	b = append(b, []byte{0xb8, 0x00, 0x4c}...) // mov ax,4c00h
-	b = append(b, []byte{0xcd, 0x21}...) // int 21h
+	b = append(b, []byte{0xcd, 0x21}...)       // int 21h
 
 	intHandlers := make(intHandlers)
 

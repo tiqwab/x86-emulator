@@ -30,17 +30,41 @@ type segmentOverride struct {
 	sreg registerS
 }
 
-func realAddress(seg word, offset word) address {
-	return address(seg) << 4 + address(offset)
-}
-
 // --- memory
 
 type memory struct {
 	loadModule []byte
 	memorySize int
 }
-type address uint16
+
+type address struct {
+	seg uint16
+	offset uint16
+}
+
+func newAddress(seg uint16, offset uint16) *address {
+	return &address{seg: seg, offset: offset}
+}
+
+func newAddressFromWord(seg word, offset word) *address {
+	return &address{seg: uint16(seg), offset: uint16(offset)}
+}
+
+func (address *address) plus(x int) {
+	address.offset = uint16(int(address.offset) + x)
+}
+
+func (address *address) plus8(x int8) {
+	address.offset = uint16(int16(address.offset) + int16(x))
+}
+
+func (address *address) plus16(x int16) {
+	address.offset = uint16(int16(address.offset) + x)
+}
+
+func (address *address) realAddress() int {
+	return int(address.seg) << 4 + int(address.offset)
+}
 
 // Prepare memory whose size is same as load module
 func newMemory(loadModule []byte) *memory {
@@ -55,7 +79,8 @@ func newMemory(loadModule []byte) *memory {
 // TODO: How to calculate the necessary stack size?
 func newMemoryFromHeader(loadModule []byte, header *header) *memory {
 	loadModuleSize := len(loadModule)
-	stackSize := int(realAddress(header.exInitSS, header.exInitSP))
+	stackMaxAddress := newAddressFromWord(header.exInitSS, header.exInitSP)
+	stackSize := stackMaxAddress.realAddress()
 	memorySize := loadModuleSize + stackSize
 	m := make([]byte, memorySize)
 	for i := 0; i < loadModuleSize; i++ {
@@ -64,19 +89,20 @@ func newMemoryFromHeader(loadModule []byte, header *header) *memory {
 	return &memory{loadModule: m, memorySize: memorySize}
 }
 
-func (memory *memory) readBytes(at address, n int) ([]byte, error) {
-	if int(at) + (n-1) >= memory.memorySize {
+func (memory *memory) readBytes(at *address, n int) ([]byte, error) {
+	if at.realAddress() + (n-1) >= memory.memorySize {
 		return nil, fmt.Errorf("illegal address: 0x%05x", at)
 	}
 
 	buf := make([]byte, n)
 	for i := 0; i < n; i++ {
-		buf[i] = memory.loadModule[int(at)+i]
+		buf[i] = memory.loadModule[at.realAddress()+i]
 	}
+	at.offset += uint16(n)
 	return buf, nil
 }
 
-func (memory *memory) readByte(at address) (byte, error) {
+func (memory *memory) readByte(at *address) (byte, error) {
 	b, err := memory.readBytes(at, 1)
 	if err != nil {
 		return 0, errors.Wrap(err, "failed to read byte")
@@ -84,7 +110,7 @@ func (memory *memory) readByte(at address) (byte, error) {
 	return b[0], nil
 }
 
-func (memory *memory) readWord(at address) (word, error) {
+func (memory *memory) readWord(at *address) (word, error) {
 	buf, err := memory.readBytes(at, 2)
 	if err != nil {
 		return 0, errors.Wrap(err, "failed to read word")
@@ -92,7 +118,7 @@ func (memory *memory) readWord(at address) (word, error) {
 	return word(buf[1]) << 8 + word(buf[0]), nil
 }
 
-func (memory *memory) readInt8(at address) (int8, error) {
+func (memory *memory) readInt8(at *address) (int8, error) {
 	var v int8
 	bs, err := memory.readBytes(at, 1)
 	if err != nil {
@@ -106,7 +132,7 @@ func (memory *memory) readInt8(at address) (int8, error) {
 	return v, nil
 }
 
-func (memory *memory) readInt16(at address) (int16, error) {
+func (memory *memory) readInt16(at *address) (int16, error) {
 	var v int16
 	bs, err := memory.readBytes(at, 2)
 	if err != nil {
@@ -120,22 +146,24 @@ func (memory *memory) readInt16(at address) (int16, error) {
 	return v, nil
 }
 
-func (memory *memory) writeByte(at address, b byte) error {
-	if int(at) >= memory.memorySize {
+func (memory *memory) writeByte(at *address, b byte) error {
+	realAddress := at.realAddress()
+	if realAddress >= memory.memorySize {
 		return fmt.Errorf("illegal address: 0x%05x", at)
 	}
-	memory.loadModule[at] = b
+	memory.loadModule[realAddress] = b
 	return nil
 }
 
-func (memory *memory) writeWord(at address, w word) error {
-	if int(at) >= memory.memorySize {
+func (memory *memory) writeWord(at *address, w word) error {
+	realAddress := at.realAddress()
+	if realAddress >= memory.memorySize {
 		return fmt.Errorf("illegal address: 0x%05x", at)
 	}
 	low := byte(w & 0x00ff)
 	high := byte((w & 0xff00) >> 8)
-	memory.loadModule[at] = low
-	memory.loadModule[at+1] = high
+	memory.loadModule[realAddress] = low
+	memory.loadModule[realAddress+1] = high
 	return nil
 }
 
@@ -498,7 +526,7 @@ type instJae struct {
 	rel8 int8
 }
 
-func decodeModRegRM(at address, memory *memory) (byte, byte, registerW, error) {
+func decodeModRegRM(at *address, memory *memory) (byte, byte, registerW, error) {
 	buf, err := memory.readByte(at)
 	if err != nil {
 		return 0, 0, 0, errors.Wrap(err, "failed to parse byte")
@@ -519,16 +547,17 @@ func decodeInst(reader io.Reader) (interface{}, int, *segmentOverride, error) {
 		return nil, 0, nil, err
 	}
 	memory := newMemory(bytes)
-	return decodeInstWithMemory(0, memory)
+	address := newAddress(0, 0)
+	return decodeInstWithMemory(address, memory)
 }
 
 // inst, read bytes, register overriding, error
-func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, int, *segmentOverride, error) {
+func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{}, int, *segmentOverride, error) {
 	var inst interface{}
 	currentAddress := initialAddress
+	initialRealAddress := initialAddress.realAddress()
 
 	rawOpcode, err := memory.readByte(currentAddress)
-	currentAddress++
 	if err != nil {
 		return inst, -1, nil, errors.Wrap(err, "failed to parse opcode")
 	}
@@ -538,7 +567,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// 03 /r
 	case 0x03:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -569,7 +597,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// 20 /r
 	case 0x20:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -583,7 +610,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			switch rm {
 			case 6:
 				offset, err := memory.readWord(currentAddress)
-				currentAddress += 2
 				if err != nil {
 					return inst, -1, nil, errors.Wrap(err, "failed to parse word")
 				}
@@ -597,17 +623,16 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 
 	// segment override by ES
 	case 0x26:
-		inst, readBytes, _, err := decodeInstWithMemory(currentAddress, memory)
+		inst, _, _, err := decodeInstWithMemory(currentAddress, memory)
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode")
 		}
-		return inst, readBytes + int(currentAddress - initialAddress), &segmentOverride{sreg: ES}, nil
+		return inst, currentAddress.realAddress() - initialRealAddress, &segmentOverride{sreg: ES}, nil
 
 	// sub r8,r/m8
 	// 2a /r
 	case 0x2a:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -631,7 +656,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// 2b /r
 	case 0x2b:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -655,7 +679,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// 33 /r
 	case 0x33:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -679,7 +702,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// 3b /r
 	case 0x3b:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -703,7 +725,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// 3c ib
 	case 0x3c:
 		imm8, err := memory.readInt8(currentAddress)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to parse as int8")
 		}
@@ -811,7 +832,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 
 	case 0x72:
 		offset, err := memory.readInt8(currentAddress)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
 		}
@@ -819,7 +839,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 
 	case 0x73:
 		imm8, err := memory.readInt8(currentAddress)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
 		}
@@ -829,7 +848,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// 74 cb
 	case 0x74:
 		imm8, err := memory.readInt8(currentAddress)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
 		}
@@ -839,7 +857,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// 75 cb
 	case 0x75:
 		imm8, err := memory.readInt8(currentAddress)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
 		}
@@ -847,7 +864,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 
 	case 0x80:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -860,7 +876,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			}
 
 			imm, err := memory.readByte(currentAddress)
-			currentAddress++
 			if err != nil {
 				return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
 			}
@@ -887,10 +902,8 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			if err != nil {
 				return inst, -1, nil, errors.Wrap(err, "failed to parse word")
 			}
-			currentAddress += 2
 
 			imm, err := memory.readInt8(currentAddress)
-			currentAddress++
 			if err != nil {
 				return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
 			}
@@ -903,7 +916,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 
 	case 0x81:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -919,7 +931,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 					return inst, -1, nil, errors.Wrap(err, "failed to parse registerW")
 				}
 				imm16, err := memory.readWord(currentAddress)
-				currentAddress += 2
 				if err != nil {
 					return inst, -1, nil, errors.Wrap(err, "failed to parse word")
 				}
@@ -938,7 +949,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 					return inst, -1, nil, errors.Wrap(err, "failed to parse registerW")
 				}
 				imm16, err := memory.readWord(currentAddress)
-				currentAddress += 2
 				if err != nil {
 					return inst, -1, nil, errors.Wrap(err, "failed to parse word")
 				}
@@ -955,7 +965,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// 83 /7 ib ->  cmp r/m16,imm8
 	case 0x83:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -967,7 +976,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 				return nil, -1, nil, errors.Errorf("expect mod is 0b11 but %02b", mod)
 			}
 			imm, err := memory.readByte(currentAddress)
-			currentAddress++
 			if err != nil {
 				return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
 			}
@@ -992,7 +1000,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 				return nil, -1, nil, errors.Errorf("expect mod is 0b11 but %02b", mod)
 			}
 			imm, err := memory.readByte(currentAddress)
-			currentAddress++
 			if err != nil {
 				return inst, -1, nil, errors.Wrap(err, "failed to decode sub inst")
 			}
@@ -1013,12 +1020,10 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			switch mod {
 			case 0:
 				offset, err := memory.readWord(currentAddress)
-				currentAddress += 2
 				if err != nil {
 					return nil, -1, nil, errors.Wrap(err, "failed to parse disp16")
 				}
 				imm8, err := memory.readInt8(currentAddress)
-				currentAddress++
 				if err != nil {
 					return nil, -1, nil, errors.Wrap(err, "failed to parse imm8")
 				}
@@ -1034,7 +1039,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// mov r/m8,r8
 	case 0x88:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -1052,7 +1056,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 				if err != nil {
 					return inst, -1, nil, errors.Wrap(err, "failed to parse word")
 				}
-				currentAddress += 2
 				inst = instMovMem8Reg8{offset: offset, src: src}
 			default:
 				return inst, -1, nil, errors.Errorf("not yet implmeneted for rm %d", rm)
@@ -1075,7 +1078,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// mov r/m16,r16
 	case 0x89:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -1093,7 +1095,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 				if err != nil {
 					return inst, -1, nil, errors.Wrap(err, "failed to parse word")
 				}
-				currentAddress += 2
 				inst = instMovMem16Reg16{offset: offset, src: src}
 			default:
 				return inst, -1, nil, errors.Errorf("not yet implmeneted for rm %d", rm)
@@ -1106,7 +1107,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			switch rm {
 			case 6:
 				disp8, err := memory.readInt8(currentAddress)
-				currentAddress++
 				if err != nil {
 					return inst, -1, nil, errors.Wrap(err, "failed to parse disp8")
 				}
@@ -1132,7 +1132,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// 8A /r
 	case 0x8a:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -1146,7 +1145,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			switch rm {
 			case 5:
 				disp8, err := memory.readInt8(currentAddress)
-				currentAddress++
 				if err != nil {
 					return inst, -1, nil, errors.Wrap(err, "failed to read int8 on memory")
 				}
@@ -1164,7 +1162,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// mov r16,r/m16
 	case 0x8b:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -1187,7 +1184,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			switch (rm) {
 			case 6:
 				disp, err := memory.readInt8(currentAddress)
-				currentAddress++
 				if err != nil {
 					return inst, -1, nil, errors.Errorf("failed to read as int8")
 				}
@@ -1207,7 +1203,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 				if err != nil {
 					return inst, -1, nil, errors.Wrap(err, "failed to parse word")
 				}
-				currentAddress += 2
 				inst = instMovReg16Mem16{dest: dest, offset: offset}
 			default:
 				return inst, -1, nil, errors.Errorf("not yet implmeneted for rm %d", rm)
@@ -1220,7 +1215,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// mov r/m16,Sreg
 	case 0x8c:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -1238,7 +1232,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 				if err != nil {
 					return inst, -1, nil, errors.Wrap(err, "failed to parse word")
 				}
-				currentAddress += 2
 				inst = instMovMem16Sreg{offset: offset, src: src}
 			default:
 				return inst, -1, nil, errors.Errorf("not yet implmeneted for rm %d", rm)
@@ -1259,7 +1252,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// 8d /r
 	case 0x8d:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -1273,7 +1265,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 					return inst, -1, nil, errors.Wrap(err, "illegal reg value for registerW")
 				}
 				address, err := memory.readWord(currentAddress)
-				currentAddress += 2
 				if err != nil {
 					return inst, -1, nil, errors.Wrap(err, "failed to parse address of lea")
 				}
@@ -1287,7 +1278,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 				return inst, -1, nil, errors.Errorf("failed to parse as registerW")
 			}
 			disp8, err := memory.readInt8(currentAddress)
-			currentAddress++
 			switch rm {
 			case 5:
 				inst = instLeaReg16Disp8{dest: dest, base: DI, disp8: disp8}
@@ -1303,7 +1293,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// Sreg ES=0, CS=1, SS=2, DS=3, FS=4, GS=5
 	case 0x8e:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -1326,7 +1315,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// A1
 	case 0xa1:
 		imm, err := memory.readWord(currentAddress)
-		currentAddress += 2
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm16")
 		}
@@ -1336,7 +1324,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// A2
 	case 0xa2:
 		offset, err := memory.readWord(currentAddress)
-		currentAddress += 2
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm16")
 		}
@@ -1346,7 +1333,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// A3
 	case 0xa3:
 		offset, err := memory.readWord(currentAddress)
-		currentAddress += 2
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm16")
 		}
@@ -1361,7 +1347,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	case 0xb0:
 		// al
 		imm, err := memory.readByte(currentAddress)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
@@ -1369,7 +1354,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	case 0xb1:
 		// cl
 		imm, err := memory.readByte(currentAddress)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
@@ -1377,7 +1361,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	case 0xb2:
 		// dl
 		imm, err := memory.readByte(currentAddress)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
@@ -1385,7 +1368,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	case 0xb3:
 		// bl
 		imm, err := memory.readByte(currentAddress)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
@@ -1393,7 +1375,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	case 0xb4:
 		// ah
 		imm, err := memory.readByte(currentAddress)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
@@ -1401,7 +1382,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	case 0xb5:
 		// ch
 		imm, err := memory.readByte(currentAddress)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
@@ -1409,7 +1389,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	case 0xb6:
 		// dh
 		imm, err := memory.readByte(currentAddress)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
@@ -1417,7 +1396,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	case 0xb7:
 		// bh
 		imm, err := memory.readByte(currentAddress)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
@@ -1428,7 +1406,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	case 0xb8:
 		// ax
 		imm, err := memory.readWord(currentAddress)
-		currentAddress += 2
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
@@ -1436,7 +1413,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	case 0xb9:
 		// cx
 		imm, err := memory.readWord(currentAddress)
-		currentAddress += 2
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
@@ -1444,7 +1420,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	case 0xba:
 		// dx
 		imm, err := memory.readWord(currentAddress)
-		currentAddress += 2
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
@@ -1452,7 +1427,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	case 0xbb:
 		// bx
 		imm, err := memory.readWord(currentAddress)
-		currentAddress += 2
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
@@ -1460,7 +1434,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	case 0xbc:
 		// sp
 		imm, err := memory.readWord(currentAddress)
-		currentAddress += 2
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
@@ -1468,7 +1441,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	case 0xbd:
 		// bp
 		imm, err := memory.readWord(currentAddress)
-		currentAddress += 2
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
@@ -1476,7 +1448,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	case 0xbe:
 		// si
 		imm, err := memory.readWord(currentAddress)
-		currentAddress += 2
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
@@ -1484,7 +1455,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	case 0xbf:
 		// di
 		imm, err := memory.readWord(currentAddress)
-		currentAddress += 2
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
@@ -1494,7 +1464,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// FIXME: handle memory address as source
 	case 0xc1:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -1507,7 +1476,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		}
 
 		imm, err := memory.readByte(currentAddress)
-		currentAddress++
 		if err != nil {
 			return nil, -1, nil, errors.Wrap(err, "failed to parse imm8")
 		}
@@ -1529,7 +1497,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// c7 /0 iw
 	case 0xc7:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -1543,12 +1510,10 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			switch rm {
 			case 6:
 				offset, err := memory.readWord(currentAddress)
-				currentAddress += 2
 				if err != nil {
 					return nil, -1, nil, errors.Wrap(err, "failed to parse word")
 				}
 				imm16, err := memory.readInt16(currentAddress)
-				currentAddress += 2
 				if err != nil {
 					return nil, -1, nil, errors.Wrap(err, "failed to parse imm16")
 				}
@@ -1560,12 +1525,10 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 			switch rm {
 			case 6:
 				disp8, err := memory.readInt8(currentAddress)
-				currentAddress++
 				if err != nil {
 					return nil, -1, nil, errors.Wrap(err, "failed to parse word")
 				}
 				imm16, err := memory.readInt16(currentAddress)
-				currentAddress += 2
 				if err != nil {
 					return nil, -1, nil, errors.Wrap(err, "failed to parse imm16")
 				}
@@ -1580,7 +1543,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// int imm8
 	case 0xcd:
 		operand, err := memory.readByte(currentAddress)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to parse operand")
 		}
@@ -1592,7 +1554,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// d1 /5
 	case 0xd1:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -1621,7 +1582,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// call rel16
 	case 0xe8:
 		rel, err := memory.readInt16(currentAddress)
-		currentAddress += 2
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to parse int16")
 		}
@@ -1630,7 +1590,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// jmp rel16
 	case 0xe9:
 		rel, err := memory.readInt16(currentAddress)
-		currentAddress += 2
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to parse int16")
 		}
@@ -1639,7 +1598,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	// jmp rel8
 	case 0xeb:
 		rel, err := memory.readInt8(currentAddress)
-		currentAddress += 1
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to parse int16")
 		}
@@ -1647,7 +1605,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 
 	case 0xf3:
 		stringOperation, err := memory.readByte(currentAddress)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to parse stringOperation")
 		}
@@ -1678,7 +1635,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 
 	case 0xff:
 		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
-		currentAddress++
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
 		}
@@ -1687,7 +1643,6 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 		case 2:
 			if mod == 0 && rm == 6 {
 				offset, err := memory.readWord(currentAddress)
-				currentAddress += 2
 				if err != nil {
 					return inst, -1, nil, errors.Wrap(err, "failed to parse word")
 				}
@@ -1703,7 +1658,7 @@ func decodeInstWithMemory(initialAddress address, memory *memory) (interface{}, 
 	default:
 		return inst, -1, nil, errors.Errorf("unknown opcode: 0x%02x", rawOpcode)
 	}
-	return inst, int(currentAddress - initialAddress), nil, nil
+	return inst, currentAddress.realAddress() - initialRealAddress, nil, nil
 }
 
 // for int 21
@@ -1730,7 +1685,7 @@ func intHandler4c(s *state, memory *memory) error {
 // string should be ended with '$'
 func intHandler09(s *state, memory *memory) error {
 	var bs []byte
-	startAddress := s.realAddress(s.ds, s.dx)
+	startAddress := newAddressFromWord(s.ds, s.dx)
 	for {
 		b, err := memory.readByte(startAddress)
 		if err != nil {
@@ -1740,7 +1695,6 @@ func intHandler09(s *state, memory *memory) error {
 			break
 		}
 		bs = append(bs, b)
-		startAddress++
 	}
 	fmt.Print(string(bs))
 	return nil
@@ -1832,12 +1786,12 @@ func (s state) bh() uint8 {
 	return uint8(s.bx >> 8)
 }
 
-func (s state) realAddress(sreg word, reg word) address {
-	return realAddress(sreg, reg)
+func (s state) addressIP() *address {
+	return newAddressFromWord(s.cs, s.ip)
 }
 
-func (s state) realIP() address {
-	return address(s.cs << 4 + s.ip)
+func (s state) addressSP() *address {
+	return newAddressFromWord(s.ss, s.sp)
 }
 
 // return true if zf == 1
@@ -2052,7 +2006,7 @@ func (s state) writeWordSreg(r registerS, w word) (state, error) {
 
 func (s state) pushWord(w word, memory *memory) (state, error) {
 	s.sp -= 2
-	err := memory.writeWord(s.realAddress(s.ss, s.sp), w)
+	err := memory.writeWord(s.addressSP(), w)
 	if err != nil {
 		return s, errors.Wrap(err, "failed to push word")
 	}
@@ -2060,7 +2014,7 @@ func (s state) pushWord(w word, memory *memory) (state, error) {
 }
 
 func (s state) popWord(memory *memory) (word, state, error) {
-	w, err := memory.readWord(s.realAddress(s.ss, s.sp))
+	w, err := memory.readWord(s.addressSP())
 	if err != nil {
 		return 0, s, errors.Wrap(err, "failed in execPop")
 	}
@@ -2195,7 +2149,8 @@ func execMovRegMemBP(inst instMovRegMemBP, state state, memory *memory) (state, 
 	if err != nil {
 		return state, errors.Wrap(err, "failed to get reg")
 	}
-	at := address(int(state.realAddress(state.ss, base)) + int(inst.disp))
+	at := newAddressFromWord(state.ss, base)
+	at.plus8(inst.disp)
 	v, err := memory.readWord(at)
 	if err != nil {
 		return state, errors.Wrap(err, "failed to read memory")
@@ -2212,7 +2167,8 @@ func execMovReg8MemDisp8(inst instMovReg8MemDisp8, state state, memory *memory) 
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execMovReg8MemDisp8")
 	}
-	at := address(int(state.realAddress(state.ds, base)) + int(inst.disp8))
+	at := newAddressFromWord(state.ds, base)
+	at.plus8(inst.disp8)
 	v, err := memory.readByte(at)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execMovReg8MemDisp8")
@@ -2240,7 +2196,8 @@ func execMovMem16Reg16(inst instMovMem16Reg16, state state, memory *memory, segm
 		return state, errors.Wrap(err, "failed in execMovMem16Reg16")
 	}
 
-	err = memory.writeWord(realAddress(state.ds, inst.offset), v)
+	at := newAddressFromWord(state.ds, inst.offset)
+	err = memory.writeWord(at, v)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execMovMem16Reg16")
 	}
@@ -2265,7 +2222,8 @@ func execMovMem8Reg8(inst instMovMem8Reg8, state state, memory *memory, segmentO
 		return state, errors.Wrap(err, "failed in execMovMem8Reg8")
 	}
 
-	err = memory.writeByte(realAddress(state.ds, inst.offset), v)
+	at := newAddressFromWord(state.ds, inst.offset)
+	err = memory.writeByte(at, v)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execMovMem8Reg8")
 	}
@@ -2285,7 +2243,8 @@ func execMovReg16Mem16(inst instMovReg16Mem16, state state, memory *memory, segm
 		}
 	}
 
-	v, err := memory.readWord(realAddress(state.ds, inst.offset))
+	at := newAddressFromWord(state.ds, inst.offset)
+	v, err := memory.readWord(at)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execMovReg16Mem16")
 	}
@@ -2315,7 +2274,8 @@ func execMovMem16Sreg(inst instMovMem16Sreg, state state, memory *memory, segmen
 		return state, errors.Wrap(err, "failed in execMovMem16Sreg")
 	}
 
-	err = memory.writeWord(state.realAddress(state.ds, inst.offset), v)
+	at := newAddressFromWord(state.ds, inst.offset)
+	err = memory.writeWord(at, v)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execMovMem16Sreg")
 	}
@@ -2337,59 +2297,62 @@ func execMovReg16Sreg(inst instMovReg16Sreg, state state) (state, error) {
 }
 
 func execMovMem16Imm16(inst instMovMem16Imm16, state state, memory *memory) (state, error) {
-	err := memory.writeWord(state.realAddress(state.ds, inst.offset), word(inst.imm16))
+	at := newAddressFromWord(state.ds, inst.offset)
+	err := memory.writeWord(at, word(inst.imm16))
 	return state, err
 }
 
 func execMovMem16Disp8Imm16(inst instMovMem16Disp8Imm16, state state, memory *memory) (state, error) {
-	var address address
+	var address *address
 	switch inst.base {
 	case AX:
-		address = state.realAddress(state.ds, state.ax + word(inst.disp8))
+		address = newAddressFromWord(state.ds, state.ax)
 	case CX:
-		address = state.realAddress(state.ds, state.cx + word(inst.disp8))
+		address = newAddressFromWord(state.ds, state.cx)
 	case DX:
-		address = state.realAddress(state.ds, state.dx + word(inst.disp8))
+		address = newAddressFromWord(state.ds, state.dx)
 	case BX:
-		address = state.realAddress(state.ds, state.bx + word(inst.disp8))
+		address = newAddressFromWord(state.ds, state.bx)
 	case SP:
-		address = state.realAddress(state.ds, state.sp + word(inst.disp8))
+		address = newAddressFromWord(state.ds, state.sp)
 	case BP:
-		address = state.realAddress(state.ss, state.bp + word(inst.disp8))
+		address = newAddressFromWord(state.ss, state.bp)
 	case SI:
-		address = state.realAddress(state.ds, state.si + word(inst.disp8))
+		address = newAddressFromWord(state.ds, state.si)
 	case DI:
-		address = state.realAddress(state.ds, state.di + word(inst.disp8))
+		address = newAddressFromWord(state.ds, state.di)
 	default:
 		return state, errors.Errorf("illegal base: %d", inst.base)
 	}
+	address.plus8(inst.disp8)
 	err := memory.writeWord(address, word(inst.imm16))
 	return state, err
 }
 
 func execMovMem16Disp8Reg16(inst instMovMem16Disp8Reg16, state state, memory *memory) (state, error) {
 	var err error
-	var address address
+	var address *address
 	switch inst.base {
 	case AX:
-		address = state.realAddress(state.ds, state.ax + word(inst.disp8))
+		address = newAddressFromWord(state.ds, state.ax)
 	case CX:
-		address = state.realAddress(state.ds, state.cx + word(inst.disp8))
+		address = newAddressFromWord(state.ds, state.cx)
 	case DX:
-		address = state.realAddress(state.ds, state.dx + word(inst.disp8))
+		address = newAddressFromWord(state.ds, state.dx)
 	case BX:
-		address = state.realAddress(state.ds, state.bx + word(inst.disp8))
+		address = newAddressFromWord(state.ds, state.bx)
 	case SP:
-		address = state.realAddress(state.ds, state.sp + word(inst.disp8))
+		address = newAddressFromWord(state.ds, state.sp)
 	case BP:
-		address = state.realAddress(state.ss, state.bp + word(inst.disp8))
+		address = newAddressFromWord(state.ss, state.bp)
 	case SI:
-		address = state.realAddress(state.ds, state.si + word(inst.disp8))
+		address = newAddressFromWord(state.ds, state.si)
 	case DI:
-		address = state.realAddress(state.ds, state.di + word(inst.disp8))
+		address = newAddressFromWord(state.ds, state.di)
 	default:
 		return state, errors.Errorf("illegal base: %d", inst.base)
 	}
+	address.plus8(inst.disp8)
 	switch inst.src {
 	case AX:
 		err = memory.writeWord(address, state.ax)
@@ -2552,7 +2515,8 @@ func execInstLeaReg16Disp8(inst instLeaReg16Disp8, state state, memory *memory) 
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execInstLeaReg16Disp8")
 	}
-	leaVal := word(state.realAddress(vDS, vBase) + address(inst.disp8))
+	address := newAddressFromWord(vDS, vBase)
+	leaVal := word(address.realAddress()) + word(inst.disp8)
 	switch inst.dest {
 	case AX:
 		state.ax = leaVal
@@ -2655,7 +2619,8 @@ func execCallAbsoluteIndirectMem16(inst instCallAbsoluteIndirectMem16, state sta
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execCallAbsoluteIndirectMem16")
 	}
-	callOffset, err := memory.readWord(state.realAddress(state.ds, inst.offset))
+	address := newAddressFromWord(state.ds, inst.offset)
+	callOffset, err := memory.readWord(address)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execCallAbsoluteIndirectMem16")
 	}
@@ -2703,7 +2668,8 @@ func execAndMem8Reg8(inst instAndMem8Reg8, state state, memory *memory) (state, 
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execAndMem8Reg8")
 	}
-	vMem, err := memory.readByte(state.realAddress(state.ds, inst.offset))
+	address := newAddressFromWord(state.ds, inst.offset)
+	vMem, err := memory.readByte(address)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execAndMem8Reg8")
 	}
@@ -2766,7 +2732,8 @@ func execInstCmpMem8Imm8(inst instCmpMem8Imm8, state state, memory *memory, segm
 		}
 	}
 
-	v, err := memory.readInt8(state.realAddress(state.ds, inst.offset))
+	address := newAddressFromWord(state.ds, inst.offset)
+	v, err := memory.readInt8(address)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execInstCmpMem8Imm8")
 	}
@@ -2787,7 +2754,8 @@ func execInstCmpMem8Imm8(inst instCmpMem8Imm8, state state, memory *memory, segm
 }
 
 func execInstCmpMem16Imm8(inst instCmpMem16Imm8, state state, memory *memory) (state, error) {
-	v, err := memory.readInt16(state.realAddress(state.ds, inst.offset))
+	address := newAddressFromWord(state.ds, inst.offset)
+	v, err := memory.readInt16(address)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execInstCmpMem8Imm8")
 	}
@@ -2896,7 +2864,8 @@ func execScasb(state state, memory *memory) (state, error) {
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execScasb")
 	}
-	vMem, err := memory.readByte(state.realAddress(vSeg, vDI))
+	address := newAddressFromWord(vSeg, vDI)
+	vMem, err := memory.readByte(address)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execScasb")
 	}
@@ -2932,7 +2901,8 @@ func execScasw(state state, memory *memory) (state, error) {
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execScasb")
 	}
-	vMem, err := memory.readWord(state.realAddress(vSeg, vDI))
+	address := newAddressFromWord(vSeg, vDI)
+	vMem, err := memory.readWord(address)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execScasb")
 	}
@@ -2972,11 +2942,11 @@ func execMovsb(state state, memory *memory) (state, error) {
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execScasb")
 	}
-	vMem, err := memory.readByte(state.realAddress(vDS, vSI))
+	vMem, err := memory.readByte(newAddressFromWord(vDS, vSI))
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execScasb")
 	}
-	err = memory.writeByte(state.realAddress(vES, vDI), vMem)
+	err = memory.writeByte(newAddressFromWord(vES, vDI), vMem)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execScasb")
 	}
@@ -3015,7 +2985,7 @@ func execStosb(state state, memory *memory) (state, error) {
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execStosb")
 	}
-	err = memory.writeByte(state.realAddress(vES, vDI), vAL)
+	err = memory.writeByte(newAddressFromWord(vES, vDI), vAL)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execStosb")
 	}
@@ -3301,7 +3271,7 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 	s := newState(header, intHandlers)
 
 	for {
-		inst, readBytesCount, segmentOverride, err := decodeInstWithMemory(s.realIP(), memory)
+		inst, readBytesCount, segmentOverride, err := decodeInstWithMemory(s.addressIP(), memory)
 		if err != nil {
 			if errors.Cause(err) == io.EOF {
 				break
