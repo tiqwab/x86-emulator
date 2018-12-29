@@ -10,11 +10,37 @@ import (
 
 type machineCode []byte
 
+// address
+
 func TestRealAddress(t *testing.T) {
 	// maximum address of real mode
 	x := newAddress(0xffff, 0xffff)
 	if x.realAddress() != 0x10ffef {
 		t.Errorf("expected %06x but actual %06x", 0x10ffef, x.realAddress())
+	}
+}
+
+// operand
+
+func TestNewImm8(t *testing.T) {
+	fixtures := []byte{
+		0x7f,
+		0xff,
+	}
+	expecteds := []int8{
+		127,
+		-1,
+	}
+	for i := 0; i < len(fixtures); i++ {
+		var actual imm8
+		var err error
+		if actual, err = newImm8(fixtures[i]); err != nil {
+			t.Errorf("%+v", err)
+		}
+		expected := expecteds[i]
+		if actual.value != expected {
+			t.Errorf("expect %d as fixtures[%d] but actual %d", expected, i, actual)
+		}
 	}
 }
 
@@ -79,7 +105,9 @@ func TestDecodeMovReg8Imm8(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instMovReg8Imm8{dest: AH, imm8: 0x09}
+	dest := reg8{value: AH}
+	src := imm8{value: 0x09}
+	expected := instMov{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}

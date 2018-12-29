@@ -264,18 +264,65 @@ func toRegisterS(x uint8) (registerS, error) {
 	}
 }
 
+// --- operand
+
+type operand interface {
+	read(state state, memory *memory) (int, error)
+	write(value int, state state, memory *memory) (state, error) // FIXME: state passsed as pointer (use it as mutable)
+}
+
+type imm8 struct {
+	value int8
+}
+
+func newImm8(b byte) (imm8, error) {
+	var v int8
+	var r io.Reader = bytes.NewReader([]byte{b})
+	err := binary.Read(r, binary.LittleEndian, &v)
+	return imm8{value: v}, err
+}
+
+func (imm8 imm8) read(s state, m *memory) (int, error) {
+	return int(imm8.value), nil
+}
+
+func (imm8 imm8) write(v int, s state, m *memory) (state, error) {
+	return s, errors.Errorf("cannot write to imm8")
+}
+
+type reg8 struct {
+	value registerB
+}
+
+func newReg8(b byte) (reg8, error) {
+	reg, err := toRegisterB(b)
+	return reg8{value: reg}, err
+}
+
+func (reg8 reg8) read(s state, m *memory) (int, error) {
+	v, err := s.readByteGeneralReg(reg8.value)
+	return int(v), err
+}
+
+func (reg8 reg8) write(v int, s state, m *memory) (state, error) {
+	s, err := s.writeByteGeneralReg(reg8.value, uint8(v))
+	return s, err
+}
+
+// --- instruction
+
 type instInt struct {
 	operand uint8
+}
+
+type instMov struct {
+	dest operand
+	src operand
 }
 
 type instMovReg16Imm16 struct {
 	dest registerW
 	imm word
-}
-
-type instMovReg8Imm8 struct {
-	dest registerB
-	imm8 uint8
 }
 
 type instMovReg8Reg8 struct {
@@ -1344,62 +1391,20 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 
 	// b0+ rb ib
 	// mov r8,imm8
-	case 0xb0:
-		// al
+	case 0xb0, 0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7:
 		imm, err := memory.readByte(currentAddress)
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
-		inst = instMovReg8Imm8{dest: AL, imm8: imm}
-	case 0xb1:
-		// cl
-		imm, err := memory.readByte(currentAddress)
+		dest, err := newReg8(rawOpcode - 0xb0)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
+			return inst, -1, nil, errors.Wrap(err, "failed to create dest operand")
 		}
-		inst = instMovReg8Imm8{dest: CL, imm8: imm}
-	case 0xb2:
-		// dl
-		imm, err := memory.readByte(currentAddress)
+		src, err := newImm8(imm)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
+			return inst, -1, nil, errors.Wrap(err, "failed to create src operand")
 		}
-		inst = instMovReg8Imm8{dest: DL, imm8: imm}
-	case 0xb3:
-		// bl
-		imm, err := memory.readByte(currentAddress)
-		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
-		}
-		inst = instMovReg8Imm8{dest: BL, imm8: imm}
-	case 0xb4:
-		// ah
-		imm, err := memory.readByte(currentAddress)
-		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
-		}
-		inst = instMovReg8Imm8{dest: AH, imm8: imm}
-	case 0xb5:
-		// ch
-		imm, err := memory.readByte(currentAddress)
-		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
-		}
-		inst = instMovReg8Imm8{dest: CH, imm8: imm}
-	case 0xb6:
-		// dh
-		imm, err := memory.readByte(currentAddress)
-		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
-		}
-		inst = instMovReg8Imm8{dest: DH, imm8: imm}
-	case 0xb7:
-		// bh
-		imm, err := memory.readByte(currentAddress)
-		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
-		}
-		inst = instMovReg8Imm8{dest: BH, imm8: imm}
+		inst = instMov{dest: dest, src: src}
 
 	// b8+ rw iw
 	// mov r16,imm16
@@ -1935,13 +1940,13 @@ func (s state) writeByteGeneralReg(r registerB, b uint8) (state, error) {
 	case BL:
 		s.bx = (s.bx & 0xff00) | word(b)
 	case AH:
-		s.ax = (s.ax & 0x00ff) | word(b << 8)
+		s.ax = (s.ax & 0x00ff) | (word(b) << 8)
 	case CH:
-		s.cx = (s.cx & 0x00ff) | word(b << 8)
+		s.cx = (s.cx & 0x00ff) | (word(b) << 8)
 	case DH:
-		s.dx = (s.dx & 0x00ff) | word(b << 8)
+		s.dx = (s.dx & 0x00ff) | (word(b) << 8)
 	case BH:
-		s.bx = (s.bx & 0x00ff) | word(b << 8)
+		s.bx = (s.bx & 0x00ff) | (word(b) << 8)
 	default:
 		return s, errors.Errorf("illegal number for registerB: %d", r)
 	}
@@ -2022,6 +2027,17 @@ func (s state) popWord(memory *memory) (word, state, error) {
 	return w, s, nil
 }
 
+// --- execute instruction
+
+func execMov(inst instMov, state state, memory *memory) (state, error) {
+	var v int
+	var err error
+	if v, err = inst.src.read(state, memory); err != nil {
+		return state, err
+	}
+	return inst.dest.write(v, state, memory)
+}
+
 func execMovReg16Imm16(inst instMovReg16Imm16, state state) (state, error) {
 	switch inst.dest {
 	case AX:
@@ -2040,30 +2056,6 @@ func execMovReg16Imm16(inst instMovReg16Imm16, state state) (state, error) {
 		state.si = inst.imm
 	case DI:
 		state.di = inst.imm
-	default:
-		return state, errors.Errorf("unknown register: %v", inst.dest)
-	}
-	return state, nil
-}
-
-func execMovReg8Imm8(inst instMovReg8Imm8, state state) (state, error) {
-	switch inst.dest {
-	case AL:
-		state.ax = word(uint16(inst.imm8) + (0xff00) & uint16(state.ax))
-	case CL:
-		state.cx = word(uint16(inst.imm8) + (0xff00) & uint16(state.cx))
-	case DL:
-		state.dx = word(uint16(inst.imm8) + (0xff00) & uint16(state.dx))
-	case BL:
-		state.bx = word(uint16(inst.imm8) + (0xff00) & uint16(state.bx))
-	case AH:
-		state.ax = word((uint16(inst.imm8) << 8) + (0x00ff) & uint16(state.ax))
-	case CH:
-		state.cx = word((uint16(inst.imm8) << 8) + (0x00ff) & uint16(state.cx))
-	case DH:
-		state.dx = word((uint16(inst.imm8) << 8) + (0x00ff) & uint16(state.dx))
-	case BH:
-		state.bx = word((uint16(inst.imm8) << 8) + (0x00ff) & uint16(state.bx))
 	default:
 		return state, errors.Errorf("unknown register: %v", inst.dest)
 	}
@@ -3142,10 +3134,10 @@ func execInstJae(inst instJae, state state) (state, error) {
 
 func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
 	switch inst := shouldBeInst.(type) {
+	case instMov:
+		return execMov(inst, state, memory)
 	case instMovReg16Imm16:
 		return execMovReg16Imm16(inst, state)
-	case instMovReg8Imm8:
-		return execMovReg8Imm8(inst, state)
 	case instMovReg8Reg8:
 		return execMovReg8Reg8(inst, state)
 	case instMovReg16Reg16:
