@@ -479,16 +479,6 @@ type instMov struct {
 	src operand
 }
 
-type instMovMem16Sreg struct {
-	offset word
-	src registerS
-}
-
-type instMovReg16Sreg struct {
-	dest registerW
-	src registerS
-}
-
 type instShl struct {
 	register registerW
 	imm uint8
@@ -1340,43 +1330,19 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	// 8c /r
 	// mov r/m16,Sreg
 	case 0x8c:
-		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8c")
 		}
-
-		switch mod {
-		case 0:
-			src, err := toRegisterS(reg)
-			if err != nil {
-				return inst, -1, nil, errors.Errorf("illegal reg vlue for registerS: %d", reg)
-			}
-
-			switch rm {
-			case 6:
-				offset, err := memory.readWord(currentAddress)
-				if err != nil {
-					return inst, -1, nil, errors.Wrap(err, "failed to parse word")
-				}
-				inst = instMovMem16Sreg{offset: offset, src: src}
-			default:
-				return inst, -1, nil, errors.Errorf("not yet implmeneted for rm %d", rm)
-			}
-
-		case 3:
-			sreg, err := toRegisterS(uint8(reg))
-			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to parse sreg")
-			}
-			dest, err := toRegisterW(rm)
-			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to parse as registerW")
-			}
-			inst = instMovReg16Sreg{dest: dest, src: sreg}
-
-		default:
-			return inst, -1, nil, errors.Errorf("not yet implemented for mod 0x%02x", mod)
+		dest, err := modRM.getEv(currentAddress, memory)
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8c")
 		}
+		src, err := modRM.getSw()
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8c")
+		}
+		inst = instMov{dest: dest, src: src}
 
 	// lea r16,m
 	// 8d /r
@@ -2090,44 +2056,6 @@ func execMov(inst instMov, state state, memory *memory, segmentOverride *segment
 		state.ds = initDS
 	}
 	return state, err
-}
-
-func execMovMem16Sreg(inst instMovMem16Sreg, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
-	initDS := state.ds
-	if segmentOverride != nil {
-		switch segmentOverride.sreg {
-		case ES:
-			state.ds = state.es
-		default:
-			return state, errors.Errorf("not yet implemented or illegal sreg: %#v", segmentOverride.sreg)
-		}
-	}
-
-	v, err := state.readWordSreg(inst.src)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execMovMem16Sreg")
-	}
-
-	at := newAddressFromWord(state.ds, inst.offset)
-	err = memory.writeWord(at, v)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execMovMem16Sreg")
-	}
-
-	state.ds = initDS
-	return state, nil
-}
-
-func execMovReg16Sreg(inst instMovReg16Sreg, state state) (state, error) {
-	v, err := state.readWordSreg(inst.src)
-	if err != nil {
-		return state, errors.Errorf("failed in execMovReg16Sreg")
-	}
-	state, err = state.writeWordGeneralReg(inst.dest, v)
-	if err != nil {
-		return state, errors.Errorf("failed in execMovReg16Sreg")
-	}
-	return state, nil
 }
 
 func execShl(inst instShl, state state) (state, error) {
@@ -2898,10 +2826,6 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 	switch inst := shouldBeInst.(type) {
 	case instMov:
 		return execMov(inst, state, memory, segmentOverride)
-	case instMovMem16Sreg:
-		return execMovMem16Sreg(inst, state, memory, segmentOverride)
-	case instMovReg16Sreg:
-		return execMovReg16Sreg(inst, state)
 	case instShl:
 		return execShl(inst, state)
 	case instAdd:

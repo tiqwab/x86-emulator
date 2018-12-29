@@ -156,7 +156,9 @@ func TestDecodeMovMem16SregWithSegmentOverride(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instMovMem16Sreg{offset: 0x0032, src: DS}
+	dest := mem16Disp16{offset: 0x0032}
+	src := sreg{value: DS}
+	expected := instMov{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
@@ -682,7 +684,9 @@ func TestDecodeMovReg16Sreg(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instMovReg16Sreg{dest: AX, src: ES}
+	dest := reg16{value: AX}
+	src := sreg{value: ES}
+	expected := instMov{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
