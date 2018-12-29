@@ -602,7 +602,7 @@ type instJae struct {
 	rel8 int8
 }
 
-func decodeModRegRM(at *address, memory *memory) (byte, byte, registerW, error) {
+func decodeModRegRM(at *address, memory *memory) (byte, byte, byte, error) {
 	buf, err := memory.readByte(at)
 	if err != nil {
 		return 0, 0, 0, errors.Wrap(err, "failed to parse byte")
@@ -610,7 +610,7 @@ func decodeModRegRM(at *address, memory *memory) (byte, byte, registerW, error) 
 
 	mod := (buf & 0xc0) >> 6     // 0b11000000
 	reg := (buf & 0x38) >> 3     // 0b00111000
-	rm  := registerW(buf & 0x07) // 0b00000111
+	rm  := buf & 0x07 // 0b00000111
 
 	return mod, reg, rm, nil
 }
@@ -1056,20 +1056,12 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 				return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
 			}
 
-			switch rm {
-			case AX:
-				inst = instAdd{dest: AX, imm: imm}
-			case CX:
-				inst = instAdd{dest: CX, imm: imm}
-			case DX:
-				inst = instAdd{dest: DX, imm: imm}
-			case BX:
-				inst = instAdd{dest: BX, imm: imm}
-			case SP:
-				inst = instAdd{dest: SP, imm: imm}
-			default:
-				return nil, -1, nil, errors.Errorf("unknown register: %d", rm)
+			dest, err := toRegisterW(rm)
+			if err != nil {
+				return nil, -1, nil, errors.Wrap(err, "failed to parse as registerW")
 			}
+			inst = instAdd{dest: dest, imm: imm}
+
 		// sub
 		case 5:
 			if mod != 3 {
@@ -1079,18 +1071,13 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 			if err != nil {
 				return inst, -1, nil, errors.Wrap(err, "failed to decode sub inst")
 			}
-			switch rm {
-			case AX:
-				inst = instSubReg16Imm8{dest: AX, imm: imm}
-			case DX:
-				inst = instSubReg16Imm8{dest: DX, imm: imm}
-			case CX:
-				inst = instSubReg16Imm8{dest: CX, imm: imm}
-			case SP:
-				inst = instSubReg16Imm8{dest: SP, imm: imm}
-			default:
-				return nil, -1, nil, errors.Errorf("unknown register: %d", rm)
+
+			dest, err := toRegisterW(rm)
+			if err != nil {
+				return nil, -1, nil, errors.Wrap(err, "failed to parse as registerW")
 			}
+			inst = instSubReg16Imm8{dest: dest, imm: imm}
+
 		// cmp
 		case 7:
 			switch mod {
@@ -1318,7 +1305,11 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 			if err != nil {
 				return inst, -1, nil, errors.Wrap(err, "failed to parse sreg")
 			}
-			inst = instMovReg16Sreg{dest: rm, src: sreg}
+			dest, err := toRegisterW(rm)
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to parse as registerW")
+			}
+			inst = instMovReg16Sreg{dest: dest, src: sreg}
 
 		default:
 			return inst, -1, nil, errors.Errorf("not yet implemented for mod 0x%02x", mod)
@@ -1473,14 +1464,11 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 			return nil, -1, nil, errors.Wrap(err, "failed to parse imm8")
 		}
 
-		switch rm {
-		case AX:
-			inst = instShl{register: AX, imm: imm}
-		case CX:
-			inst = instShl{register: CX, imm: imm}
-		default:
-			return nil, -1, nil, errors.Errorf("unknown register: %d", rm)
+		dest, err := toRegisterW(rm)
+		if err != nil {
+			return nil, -1, nil, errors.Wrap(err, "failed to parse as registerW")
 		}
+		inst = instShl{register: dest, imm: imm}
 
 	// ret (near return)
 	case 0xc3:
