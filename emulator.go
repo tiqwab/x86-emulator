@@ -343,6 +343,36 @@ func (reg16 reg16) write(v int, s state, m *memory) (state, error) {
 	return s.writeWordGeneralReg(reg16.value, word(v))
 }
 
+// [reg] + disp8 as byte
+type mem8BaseDisp8 struct {
+	base registerW // it should be SI, DI, BP, or BX in x86 as shown in Table 2-1. 16-Bit Addressing Forms with the ModR/M Byte
+	disp8 int8
+}
+
+func (operand mem8BaseDisp8) read(s state, m *memory) (int, error) {
+	address, err := s.addressFromBaseAndDisp(operand.base, int(operand.disp8))
+	if err != nil {
+		return 0, errors.Wrap(err, "failed to read mem8BaseDisp8")
+	}
+	v, err := m.readInt8(address)
+	if err != nil {
+		return 0, errors.Wrap(err, "failed to read mem8BaseDisp8")
+	}
+	return int(v), nil
+}
+
+func (operand mem8BaseDisp8) write(v int, s state, m *memory) (state, error) {
+	address, err := s.addressFromBaseAndDisp(operand.base, int(operand.disp8))
+	if err != nil {
+		return s, errors.Wrap(err, "failed to write to mem8BaseDisp8")
+	}
+	err = m.writeByte(address, byte(v))
+	if err != nil {
+		return s, errors.Wrap(err, "failed to write to mem8BaseDisp8")
+	}
+	return s, nil
+}
+
 // --- instruction
 
 type instInt struct {
@@ -362,12 +392,6 @@ type instMovSRegReg struct {
 type instMovRegMemBP struct {
 	dest registerW
 	disp int8
-}
-
-type instMovReg8MemDisp8 struct {
-	dest registerB
-	base registerW
-	disp8 int8
 }
 
 type instMovMem16Reg16 struct {
@@ -590,6 +614,56 @@ type instXorReg16Reg16 struct {
 
 type instJae struct {
 	rel8 int8
+}
+
+// --- ModR/M
+// Symbols such as Eb, Gb come from Table A-2. One-byte Opcode Map
+
+type modRM struct {
+	mod byte
+	reg byte
+	rm byte
+}
+
+func newModRM(at *address, memory *memory) (modRM, error) {
+	mod, reg, rm, err := decodeModRegRM(at, memory)
+	return modRM{mod: mod, reg: reg, rm: rm}, err
+}
+
+func (modRM modRM) getEb(address *address, memory *memory) (operand, error) {
+	switch modRM.mod {
+	case 1:
+		disp8, err := memory.readInt8(address)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to getEb")
+		}
+		switch modRM.rm {
+		case 4:
+			return mem8BaseDisp8{base: SI, disp8: disp8}, nil
+		case 5:
+			return mem8BaseDisp8{base: DI, disp8: disp8}, nil
+		case 6:
+			return mem8BaseDisp8{base: BP, disp8: disp8}, nil
+		case 7:
+			return mem8BaseDisp8{base: BX, disp8: disp8}, nil
+		default:
+			return nil, errors.Errorf("illegal or not yet implemeted for rm: %d", modRM.rm)
+		}
+	default:
+		return nil, errors.Errorf("illegal or not yet implemented for mod: %d", modRM.mod)
+	}
+}
+
+func (modRM modRM) getGb() (operand, error) {
+	return newReg8(modRM.reg)
+}
+
+func (modRM modRM) getEv() (operand, error) {
+	return nil, errors.Errorf("not yet implemented")
+}
+
+func (modRM modRM) getGv() (operand, error) {
+	return newReg16(modRM.reg)
 }
 
 func decodeModRegRM(at *address, memory *memory) (byte, byte, byte, error) {
@@ -1184,32 +1258,19 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	// mov r8,r/m8
 	// 8A /r
 	case 0x8a:
-		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8a")
 		}
-
-		switch mod {
-		case 1:
-			dest, err := toRegisterB(reg)
-			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to parse as registerB")
-			}
-			switch rm {
-			case 5:
-				disp8, err := memory.readInt8(currentAddress)
-				if err != nil {
-					return inst, -1, nil, errors.Wrap(err, "failed to read int8 on memory")
-				}
-
-				inst = instMovReg8MemDisp8{dest: dest, base: DI, disp8: disp8}
-			default:
-				return inst, -1, nil, errors.Errorf("not yet implemented for rm %d", rm)
-			}
-
-		default:
-			return inst, -1, nil, errors.Errorf("not yet implemented for mod 0x%02x", mod)
+		dest, err := modRM.getGb()
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8a")
 		}
+		src, err := modRM.getEb(currentAddress, memory)
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8a")
+		}
+		inst = instMov{dest: dest, src: src}
 
 	// 8b /r (/r indicates that the ModR/M byte of the instruction contains a register operand and an r/m operand)
 	// mov r16,r/m16
@@ -1765,6 +1826,23 @@ func (s state) addressSP() *address {
 	return newAddressFromWord(s.ss, s.sp)
 }
 
+func (s state) addressFromBaseAndDisp(base registerW, disp int) (*address, error) {
+	var vBase word
+	var err error
+	if vBase, err = s.readWordGeneralReg(base); err != nil {
+		return nil, errors.Wrap(err, "failed to get address from base and disp")
+	}
+
+	var address *address
+	if base == BP {
+		address = newAddressFromWord(s.ss, vBase)
+	} else {
+		address = newAddressFromWord(s.ds, vBase)
+	}
+	address.plus(disp)
+	return address, nil
+}
+
 // return true if zf == 1
 func (s state) isActiveZF() bool {
 	zf := s.eflags & EFLAGS_ZF
@@ -2036,24 +2114,6 @@ func execMovRegMemBP(inst instMovRegMemBP, state state, memory *memory) (state, 
 	state, err = state.writeWordGeneralReg(inst.dest, v)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in moving to reg")
-	}
-	return state, nil
-}
-
-func execMovReg8MemDisp8(inst instMovReg8MemDisp8, state state, memory *memory) (state, error) {
-	base, err := state.readWordGeneralReg(inst.base)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execMovReg8MemDisp8")
-	}
-	at := newAddressFromWord(state.ds, base)
-	at.plus8(inst.disp8)
-	v, err := memory.readByte(at)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execMovReg8MemDisp8")
-	}
-	state, err = state.writeByteGeneralReg(inst.dest, v)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execMovReg8MemDisp8")
 	}
 	return state, nil
 }
@@ -3026,8 +3086,6 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execMovSRegReg(inst, state)
 	case instMovRegMemBP:
 		return execMovRegMemBP(inst, state, memory)
-	case instMovReg8MemDisp8:
-		return execMovReg8MemDisp8(inst, state, memory)
 	case instMovMem16Reg16:
 		return execMovMem16Reg16(inst, state, memory, segmentOverride)
 	case instMovMem8Reg8:

@@ -202,7 +202,9 @@ func TestDecodeMovReg8WithDisp(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instMovReg8MemDisp8{dest: CL, base: DI, disp8: -1}
+	dest := reg8{value: CL}
+	src := mem8BaseDisp8{base: DI, disp8: -1}
+	expected := instMov{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
