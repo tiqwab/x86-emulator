@@ -176,7 +176,9 @@ func TestDecodeMovMoffs16AlWithSegmentOverride(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instMovMem8Reg8{offset: 0x0034, src: AL}
+	dest := mem8Disp16{offset: 0x0034}
+	src := reg8{value: AL}
+	expected := instMov{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
