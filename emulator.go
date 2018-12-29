@@ -354,11 +354,6 @@ type instMov struct {
 	src operand
 }
 
-type instMovReg16Reg16 struct {
-	dest registerW
-	src registerW
-}
-
 type instMovSRegReg struct {
 	dest registerS
 	src registerW
@@ -1173,15 +1168,15 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 				return inst, -1, nil, errors.Errorf("not yet implemented for rm: %d", rm)
 			}
 		case 3:
-			dest, err := toRegisterW(uint8(rm))
+			dest, err := newReg16(rm)
 			if err != nil {
 				return inst, -1, nil, errors.Wrap(err, "failed to parse registerW")
 			}
-			src, err := toRegisterW(uint8(reg))
+			src, err := newReg16(reg)
 			if err != nil {
 				return inst, -1, nil, errors.Wrap(err, "failed to parse registerW")
 			}
-			inst = instMovReg16Reg16{dest: dest, src: src}
+			inst = instMov{dest: dest, src: src}
 		default:
 			return inst, -1, nil, errors.Errorf("not yet implemented for mod 0x%02x", mod)
 		}
@@ -1225,15 +1220,15 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 		}
 
 		if mod == 3 {
-			dest, err := toRegisterW(uint8(reg))
+			dest, err := newReg16(reg)
 			if err != nil {
 				return inst, -1, nil, errors.Errorf("illegal reg value for registerW: %d", reg)
 			}
-			src, err := toRegisterW(uint8(rm))
+			src, err := newReg16(rm)
 			if err != nil {
 				return inst, -1, nil, errors.Errorf("illegal rm value for registerW: %d", rm)
 			}
-			inst = instMovReg16Reg16{dest: dest, src: src}
+			inst = instMov{dest: dest, src: src}
 		} else if mod == 1 {
 			dest, err := toRegisterW(uint8(reg))
 			if err != nil {
@@ -2007,34 +2002,6 @@ func execMov(inst instMov, state state, memory *memory) (state, error) {
 		return state, err
 	}
 	return inst.dest.write(v, state, memory)
-}
-
-func execMovReg16Reg16(inst instMovReg16Reg16, state state) (state, error) {
-	v, err := state.readWordGeneralReg(inst.src)
-	if err != nil {
-		return state, errors.Wrap(err, "failed to get reg")
-	}
-	switch inst.dest {
-	case AX:
-		state.ax = v
-	case CX:
-		state.cx = v
-	case DX:
-		state.dx = v
-	case BX:
-		state.bx = v
-	case SP:
-		state.sp = v
-	case BP:
-		state.bp = v
-	case SI:
-		state.si = v
-	case DI:
-		state.di = v
-	default:
-		return state, errors.Errorf("unknown register: %v", inst.dest)
-	}
-	return state, nil
 }
 
 func execMovSRegReg(inst instMovSRegReg, state state) (state, error) {
@@ -3055,8 +3022,6 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 	switch inst := shouldBeInst.(type) {
 	case instMov:
 		return execMov(inst, state, memory)
-	case instMovReg16Reg16:
-		return execMovReg16Reg16(inst, state)
 	case instMovSRegReg:
 		return execMovSRegReg(inst, state)
 	case instMovRegMemBP:
