@@ -124,7 +124,9 @@ func TestDecodeMovMem16Reg16WithSegmentOverride(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instMovMem16Reg16{offset: 0x0038, src: BX}
+	dest := mem16Disp16{offset: 0x0038}
+	src := reg16{value: BX}
+	expected := instMov{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
@@ -195,7 +197,9 @@ func TestDecodeMovMMoffs16Ax(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instMovMem16Reg16{offset: 0x0042, src: AX}
+	dest := mem16Disp16{offset: 0x0042}
+	src := reg16{value: AX}
+	expected := instMov{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
@@ -253,7 +257,9 @@ func TestDecodeMovMem16Disp8Reg16(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instMovMem16Disp8Reg16{base: BP, disp8: -4, src: AX}
+	dest := mem16BaseDisp8{base: BP, disp8: -4}
+	src := reg16{value: AX}
+	expected := instMov{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
