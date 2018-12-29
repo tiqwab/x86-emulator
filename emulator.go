@@ -354,11 +354,6 @@ type instMov struct {
 	src operand
 }
 
-type instMovReg8Reg8 struct {
-	dest registerB
-	src registerB
-}
-
 type instMovReg16Reg16 struct {
 	dest registerW
 	src registerW
@@ -1124,15 +1119,15 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 				return inst, -1, nil, errors.Errorf("not yet implmeneted for rm %d", rm)
 			}
 		case 3:
-			src, err := toRegisterB(reg)
+			src, err := newReg8(reg)
 			if err != nil {
 				return inst, -1, nil, errors.Wrap(err, "failed to parse registerB")
 			}
-			dest, err := toRegisterB(uint8(rm))
+			dest, err := newReg8(rm)
 			if err != nil {
 				return inst, -1, nil, errors.Wrap(err, "failed to parse registerB")
 			}
-			inst = instMovReg8Reg8{dest: dest, src: src}
+			inst = instMov{dest: dest, src: src}
 		default:
 			return inst, -1, nil, errors.Errorf("not yet implemented for mod 0x%02x", mod)
 		}
@@ -2012,34 +2007,6 @@ func execMov(inst instMov, state state, memory *memory) (state, error) {
 		return state, err
 	}
 	return inst.dest.write(v, state, memory)
-}
-
-func execMovReg8Reg8(inst instMovReg8Reg8, state state) (state, error) {
-	v, err := state.readByteGeneralReg(inst.src)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execMovReg8Reg8")
-	}
-	switch inst.dest {
-	case AL:
-		state.ax = word(uint16(v) + (0xff00) & uint16(state.ax))
-	case CL:
-		state.cx = word(uint16(v) + (0xff00) & uint16(state.cx))
-	case DL:
-		state.dx = word(uint16(v) + (0xff00) & uint16(state.dx))
-	case BL:
-		state.bx = word(uint16(v) + (0xff00) & uint16(state.bx))
-	case AH:
-		state.ax = word((uint16(v) << 8) + (0x00ff) & uint16(state.ax))
-	case CH:
-		state.cx = word((uint16(v) << 8) + (0x00ff) & uint16(state.cx))
-	case DH:
-		state.dx = word((uint16(v) << 8) + (0x00ff) & uint16(state.dx))
-	case BH:
-		state.bx = word((uint16(v) << 8) + (0x00ff) & uint16(state.bx))
-	default:
-		return state, errors.Errorf("unknown register: %v", inst.dest)
-	}
-	return state, nil
 }
 
 func execMovReg16Reg16(inst instMovReg16Reg16, state state) (state, error) {
@@ -3088,8 +3055,6 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 	switch inst := shouldBeInst.(type) {
 	case instMov:
 		return execMov(inst, state, memory)
-	case instMovReg8Reg8:
-		return execMovReg8Reg8(inst, state)
 	case instMovReg16Reg16:
 		return execMovReg16Reg16(inst, state)
 	case instMovSRegReg:
