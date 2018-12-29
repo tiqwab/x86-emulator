@@ -96,7 +96,9 @@ func TestDecodeMovDs(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instMovSRegReg{dest: DS, src: AX}
+	dest := sreg{value: DS}
+	src := reg16{value: AX}
+	expected := instMov{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
