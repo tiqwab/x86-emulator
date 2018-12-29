@@ -23,9 +23,9 @@ func TestRealAddress(t *testing.T) {
 // operand
 
 func TestNewImm8(t *testing.T) {
-	fixtures := []byte{
-		0x7f,
-		0xff,
+	fixtures := [][]byte{
+		[]byte{0x7f},
+		[]byte{0xff},
 	}
 	expecteds := []int8{
 		127,
@@ -34,7 +34,7 @@ func TestNewImm8(t *testing.T) {
 	for i := 0; i < len(fixtures); i++ {
 		var actual imm8
 		var err error
-		if actual, err = newImm8(fixtures[i]); err != nil {
+		if actual, err = newImm8(bytes.NewReader(fixtures[i])); err != nil {
 			t.Errorf("%+v", err)
 		}
 		expected := expecteds[i]
@@ -66,7 +66,9 @@ func TestDecodeMovAX(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instMovReg16Imm16{dest: AX, imm: 0x0001}
+	dest := reg16{value: AX}
+	src := imm16{value: 0x0001}
+	expected := instMov{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
@@ -79,7 +81,9 @@ func TestDecodeMovCX(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instMovReg16Imm16{dest: CX, imm: 0x0001}
+	dest := reg16{value: CX}
+	src := imm16{value: 0x0001}
+	expected := instMov{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}

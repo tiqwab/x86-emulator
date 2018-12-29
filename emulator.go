@@ -275,9 +275,8 @@ type imm8 struct {
 	value int8
 }
 
-func newImm8(b byte) (imm8, error) {
+func newImm8(r io.Reader) (imm8, error) {
 	var v int8
-	var r io.Reader = bytes.NewReader([]byte{b})
 	err := binary.Read(r, binary.LittleEndian, &v)
 	return imm8{value: v}, err
 }
@@ -287,6 +286,24 @@ func (imm8 imm8) read(s state, m *memory) (int, error) {
 }
 
 func (imm8 imm8) write(v int, s state, m *memory) (state, error) {
+	return s, errors.Errorf("cannot write to imm8")
+}
+
+type imm16 struct {
+	value int16
+}
+
+func newImm16(r io.Reader) (imm16, error) {
+	var v int16
+	err := binary.Read(r, binary.LittleEndian, &v)
+	return imm16{value: v}, err
+}
+
+func (imm16 imm16) read(s state, m *memory) (int, error) {
+	return int(imm16.value), nil
+}
+
+func (imm16 imm16) write(v int, s state, m *memory) (state, error) {
 	return s, errors.Errorf("cannot write to imm8")
 }
 
@@ -305,8 +322,25 @@ func (reg8 reg8) read(s state, m *memory) (int, error) {
 }
 
 func (reg8 reg8) write(v int, s state, m *memory) (state, error) {
-	s, err := s.writeByteGeneralReg(reg8.value, uint8(v))
-	return s, err
+	return s.writeByteGeneralReg(reg8.value, uint8(v))
+}
+
+type reg16 struct {
+	value registerW
+}
+
+func newReg16(b byte) (reg16, error) {
+	reg, err := toRegisterW(b)
+	return reg16{value: reg}, err
+}
+
+func (reg16 reg16) read(s state, m *memory) (int, error) {
+	v, err := s.readWordGeneralReg(reg16.value)
+	return int(v), err
+}
+
+func (reg16 reg16) write(v int, s state, m *memory) (state, error) {
+	return s.writeWordGeneralReg(reg16.value, word(v))
 }
 
 // --- instruction
@@ -318,11 +352,6 @@ type instInt struct {
 type instMov struct {
 	dest operand
 	src operand
-}
-
-type instMovReg16Imm16 struct {
-	dest registerW
-	imm word
 }
 
 type instMovReg8Reg8 struct {
@@ -1392,7 +1421,7 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	// b0+ rb ib
 	// mov r8,imm8
 	case 0xb0, 0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7:
-		imm, err := memory.readByte(currentAddress)
+		imm, err := memory.readBytes(currentAddress, 1)
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
@@ -1400,7 +1429,7 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to create dest operand")
 		}
-		src, err := newImm8(imm)
+		src, err := newImm8(bytes.NewReader(imm))
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to create src operand")
 		}
@@ -1408,62 +1437,21 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 
 	// b8+ rw iw
 	// mov r16,imm16
-	case 0xb8:
+	case 0xb8, 0xb9, 0xba, 0xbb, 0xbc, 0xbd, 0xbe, 0xbf:
 		// ax
-		imm, err := memory.readWord(currentAddress)
+		bs, err := memory.readBytes(currentAddress, 2)
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
 		}
-		inst = instMovReg16Imm16{dest: AX, imm: imm}
-	case 0xb9:
-		// cx
-		imm, err := memory.readWord(currentAddress)
+		dest, err := newReg16(rawOpcode - 0xb8)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
+			return inst, -1, nil, errors.Wrap(err, "fialed to create dest operand")
 		}
-		inst = instMovReg16Imm16{dest: CX, imm: imm}
-	case 0xba:
-		// dx
-		imm, err := memory.readWord(currentAddress)
+		src, err := newImm16(bytes.NewReader(bs))
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
+			return inst, -1, nil, errors.Errorf("failed to create dest operand")
 		}
-		inst = instMovReg16Imm16{dest: DX, imm: imm}
-	case 0xbb:
-		// bx
-		imm, err := memory.readWord(currentAddress)
-		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
-		}
-		inst = instMovReg16Imm16{dest: BX, imm: imm}
-	case 0xbc:
-		// sp
-		imm, err := memory.readWord(currentAddress)
-		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
-		}
-		inst = instMovReg16Imm16{dest: SP, imm: imm}
-	case 0xbd:
-		// bp
-		imm, err := memory.readWord(currentAddress)
-		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
-		}
-		inst = instMovReg16Imm16{dest: BP, imm: imm}
-	case 0xbe:
-		// si
-		imm, err := memory.readWord(currentAddress)
-		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
-		}
-		inst = instMovReg16Imm16{dest: SI, imm: imm}
-	case 0xbf:
-		// di
-		imm, err := memory.readWord(currentAddress)
-		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
-		}
-		inst = instMovReg16Imm16{dest: DI, imm: imm}
+		inst = instMov{dest: dest, src: src}
 
 	// shl r/m16,imm8
 	// FIXME: handle memory address as source
@@ -2036,30 +2024,6 @@ func execMov(inst instMov, state state, memory *memory) (state, error) {
 		return state, err
 	}
 	return inst.dest.write(v, state, memory)
-}
-
-func execMovReg16Imm16(inst instMovReg16Imm16, state state) (state, error) {
-	switch inst.dest {
-	case AX:
-		state.ax = inst.imm
-	case CX:
-		state.cx = inst.imm
-	case DX:
-		state.dx = inst.imm
-	case BX:
-		state.bx = inst.imm
-	case SP:
-		state.sp = inst.imm
-	case BP:
-		state.bp = inst.imm
-	case SI:
-		state.si = inst.imm
-	case DI:
-		state.di = inst.imm
-	default:
-		return state, errors.Errorf("unknown register: %v", inst.dest)
-	}
-	return state, nil
 }
 
 func execMovReg8Reg8(inst instMovReg8Reg8, state state) (state, error) {
@@ -3136,8 +3100,6 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 	switch inst := shouldBeInst.(type) {
 	case instMov:
 		return execMov(inst, state, memory)
-	case instMovReg16Imm16:
-		return execMovReg16Imm16(inst, state)
 	case instMovReg8Reg8:
 		return execMovReg8Reg8(inst, state)
 	case instMovReg16Reg16:
