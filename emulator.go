@@ -480,17 +480,6 @@ type instMovReg16Sreg struct {
 	src registerS
 }
 
-type instMovMem16Imm16 struct {
-	offset word
-	imm16 int16
-}
-
-type instMovMem16Disp8Imm16 struct {
-	base registerW
-	disp8 int8
-	imm16 int16
-}
-
 type instMovMem16Disp8Reg16 struct {
 	base registerW
 	disp8 int8
@@ -1581,49 +1570,28 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	// mov r/m16,imm16
 	// c7 /0 iw
 	case 0xc7:
-		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xc7")
 		}
 
-		if reg != 0 {
-			return inst, -1, nil, errors.Errorf("reg should be 0 but %d", reg)
+		if modRM.reg != 0 {
+			return inst, -1, nil, errors.Errorf("reg should be 0 but %d", modRM.reg)
 		}
 
-		switch mod {
-		case 0:
-			switch rm {
-			case 6:
-				offset, err := memory.readWord(currentAddress)
-				if err != nil {
-					return nil, -1, nil, errors.Wrap(err, "failed to parse word")
-				}
-				imm16, err := memory.readInt16(currentAddress)
-				if err != nil {
-					return nil, -1, nil, errors.Wrap(err, "failed to parse imm16")
-				}
-				inst = instMovMem16Imm16{offset: offset, imm16: imm16}
-			default:
-				return nil, -1, nil, errors.Errorf("illegal or not implemented for rm: %d", rm)
-			}
-		case 1:
-			switch rm {
-			case 6:
-				disp8, err := memory.readInt8(currentAddress)
-				if err != nil {
-					return nil, -1, nil, errors.Wrap(err, "failed to parse word")
-				}
-				imm16, err := memory.readInt16(currentAddress)
-				if err != nil {
-					return nil, -1, nil, errors.Wrap(err, "failed to parse imm16")
-				}
-				inst = instMovMem16Disp8Imm16{base: BP, disp8: disp8, imm16: imm16}
-			default:
-				return nil, -1, nil, errors.Errorf("illegal or not implemented for rm: %d", rm)
-			}
-		default:
-			return nil, -1, nil, errors.Errorf("illegal or not implemented for mod: %d", mod)
+		dest, err := modRM.getEv(currentAddress, memory)
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xc7")
 		}
+		bs, err := memory.readBytes(currentAddress, 2)
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xc7")
+		}
+		src, err := newImm16(bytes.NewReader(bs))
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xc7")
+		}
+		inst = instMov{dest: dest, src: src}
 
 	// int imm8
 	case 0xcd:
@@ -2231,39 +2199,6 @@ func execMovReg16Sreg(inst instMovReg16Sreg, state state) (state, error) {
 		return state, errors.Errorf("failed in execMovReg16Sreg")
 	}
 	return state, nil
-}
-
-func execMovMem16Imm16(inst instMovMem16Imm16, state state, memory *memory) (state, error) {
-	at := newAddressFromWord(state.ds, inst.offset)
-	err := memory.writeWord(at, word(inst.imm16))
-	return state, err
-}
-
-func execMovMem16Disp8Imm16(inst instMovMem16Disp8Imm16, state state, memory *memory) (state, error) {
-	var address *address
-	switch inst.base {
-	case AX:
-		address = newAddressFromWord(state.ds, state.ax)
-	case CX:
-		address = newAddressFromWord(state.ds, state.cx)
-	case DX:
-		address = newAddressFromWord(state.ds, state.dx)
-	case BX:
-		address = newAddressFromWord(state.ds, state.bx)
-	case SP:
-		address = newAddressFromWord(state.ds, state.sp)
-	case BP:
-		address = newAddressFromWord(state.ss, state.bp)
-	case SI:
-		address = newAddressFromWord(state.ds, state.si)
-	case DI:
-		address = newAddressFromWord(state.ds, state.di)
-	default:
-		return state, errors.Errorf("illegal base: %d", inst.base)
-	}
-	address.plus8(inst.disp8)
-	err := memory.writeWord(address, word(inst.imm16))
-	return state, err
 }
 
 func execMovMem16Disp8Reg16(inst instMovMem16Disp8Reg16, state state, memory *memory) (state, error) {
@@ -3089,10 +3024,6 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execMovMem16Sreg(inst, state, memory, segmentOverride)
 	case instMovReg16Sreg:
 		return execMovReg16Sreg(inst, state)
-	case instMovMem16Imm16:
-		return execMovMem16Imm16(inst, state, memory)
-	case instMovMem16Disp8Imm16:
-		return execMovMem16Disp8Imm16(inst, state, memory)
 	case instMovMem16Disp8Reg16:
 		return execMovMem16Disp8Reg16(inst, state, memory)
 	case instShl:
