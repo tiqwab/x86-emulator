@@ -484,6 +484,11 @@ type instShl struct {
 	src operand
 }
 
+type instShr struct {
+	dest operand
+	src operand
+}
+
 type instSub struct {
 	dest operand
 	src operand
@@ -544,11 +549,6 @@ type instAnd struct {
 type instAdd struct {
 	dest operand
 	src operand
-}
-
-type instShrReg16Imm struct {
-	reg registerW
-	imm word
 }
 
 type instCmp struct {
@@ -1413,35 +1413,30 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 		}
 		inst = instInt{operand: operand}
 
-	// shr dx,1
-	// d1 /4
-	// shr dx,1
-	// d1 /5
 	case 0xd1:
 		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xd1")
 		}
+		dest, err := modRM.getEv(currentAddress, memory)
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xd1")
+		}
+		src := imm8{value: 1}
 
-		if modRM.mod == 3 {
-			switch modRM.reg {
-			case 4:
-				dest, err := modRM.getEv(currentAddress, memory)
-				if err != nil {
-					return inst, -1, nil, errors.Wrap(err, "failed to decode 0xd1")
-				}
-				inst = instShl{dest: dest, src: imm8{value: 1}}
-			case 5:
-				reg, err := toRegisterW(uint8(modRM.rm))
-				if err != nil {
-					return inst, -1, nil, errors.Wrap(err, "failed to parse registerW")
-				}
-				inst = instShrReg16Imm{reg: reg, imm: 1}
-			default:
-				return inst, -1, nil, errors.Errorf("not yet implemented for mod 0x%02x", modRM.mod)
-			}
-		} else {
-			return inst, -1, nil, errors.Errorf("not yet implemented for mod 0x%02x", modRM.mod)
+		switch modRM.reg {
+		// shl r/m16,1
+		// d1 /4
+		case 4:
+			inst = instShl{dest: dest, src: src}
+
+		// shr r/m16,1
+		// d1 /4
+		case 5:
+			inst = instShr{dest: dest, src: src}
+
+		default:
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xd1")
 		}
 
 	// call rel16
@@ -1948,6 +1943,21 @@ func execShl(inst instShl, state state, memory *memory) (state, error) {
 	return state, err
 }
 
+func execShr(inst instShr, state state, memory *memory) (state, error) {
+	var l, r int
+	var err error
+
+	if r, err = inst.src.read(state, memory); err != nil {
+		return state, err
+	}
+	if l, err = inst.dest.read(state, memory); err != nil {
+		return state, err
+	}
+
+	state, err = inst.dest.write(l >> uint(r), state, memory)
+	return state, err
+}
+
 func execSub(inst instSub, state state, memory *memory) (state, error) {
 	var l, r int
 	var err error
@@ -2152,18 +2162,6 @@ func execAdd(inst instAdd, state state, memory *memory) (state, error) {
 
 	state, err = inst.dest.write(l+r, state, memory)
 	return state, err
-}
-
-func execShrReg16Imm(inst instShrReg16Imm, state state) (state, error) {
-	v, err := state.readWordGeneralReg(inst.reg)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execShrReg16Imm")
-	}
-	state, err = state.writeWordGeneralReg(inst.reg, v >> 1)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execShrReg16Imm")
-	}
-	return state, nil
 }
 
 func execCmp(inst instCmp, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
@@ -2520,6 +2518,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execMov(inst, state, memory, segmentOverride)
 	case instShl:
 		return execShl(inst, state, memory)
+	case instShr:
+		return execShr(inst, state, memory)
 	case instAdd:
 		return execAdd(inst, state, memory)
 	case instSub:
@@ -2550,8 +2550,6 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execSti(inst, state, memory)
 	case instAnd:
 		return execAnd(inst, state, memory)
-	case instShrReg16Imm:
-		return execShrReg16Imm(inst, state)
 	case instCmp:
 		return execCmp(inst, state, memory, segmentOverride)
 	case instJneRel8:
