@@ -489,9 +489,9 @@ type instAdd struct {
 	imm uint8
 }
 
-type instSubReg16Imm8 struct {
-	dest registerW
-	imm uint8
+type instSub struct {
+	dest operand
+	src operand
 }
 
 type instSubReg16Reg16 struct {
@@ -1201,23 +1201,23 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	// 83 /5 -> sub r/m16, imm8
 	// 83 /7 ib ->  cmp r/m16,imm8
 	case 0x83:
-		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x83")
 		}
 
-		switch reg {
+		switch modRM.reg {
 		// add
 		case 0:
-			if mod != 3 {
-				return nil, -1, nil, errors.Errorf("expect mod is 0b11 but %02b", mod)
+			if modRM.mod != 3 {
+				return nil, -1, nil, errors.Errorf("expect mod is 0b11 but %02b", modRM.mod)
 			}
 			imm, err := memory.readByte(currentAddress)
 			if err != nil {
 				return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
 			}
 
-			dest, err := toRegisterW(rm)
+			dest, err := toRegisterW(modRM.rm)
 			if err != nil {
 				return nil, -1, nil, errors.Wrap(err, "failed to parse as registerW")
 			}
@@ -1225,23 +1225,23 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 
 		// sub
 		case 5:
-			if mod != 3 {
-				return nil, -1, nil, errors.Errorf("expect mod is 0b11 but %02b", mod)
-			}
-			imm, err := memory.readByte(currentAddress)
+			dest, err := modRM.getEv(currentAddress, memory)
 			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to decode sub inst")
+				return nil, -1, nil, errors.Errorf("failed to decode 0x83")
 			}
-
-			dest, err := toRegisterW(rm)
+			b, err := memory.readBytes(currentAddress, 1)
 			if err != nil {
-				return nil, -1, nil, errors.Wrap(err, "failed to parse as registerW")
+				return inst, -1, nil, errors.Wrap(err, "failed to decode 0x83")
 			}
-			inst = instSubReg16Imm8{dest: dest, imm: imm}
+			src, err := newImm8(bytes.NewReader(b))
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to decode 0x83")
+			}
+			inst = instSub{dest: dest, src: src}
 
 		// cmp
 		case 7:
-			switch mod {
+			switch modRM.mod {
 			case 0:
 				offset, err := memory.readWord(currentAddress)
 				if err != nil {
@@ -1253,10 +1253,10 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 				}
 				inst = instCmpMem16Imm8{offset: offset, imm8: imm8}
 			default:
-				return nil, -1, nil, errors.Errorf("not yet implemented for mod: %d", mod)
+				return nil, -1, nil, errors.Errorf("not yet implemented for mod: %d", modRM.mod)
 			}
 		default:
-			return nil, -1, nil, errors.Errorf("expect reg is 0 but %d", reg)
+			return nil, -1, nil, errors.Errorf("expect reg is 0 but %d", modRM.reg)
 		}
 
 	// 88 /r
@@ -2092,20 +2092,17 @@ func execAdd(inst instAdd, state state) (state, error) {
 	return state, nil
 }
 
-func execSubReg16Imm8(inst instSubReg16Imm8, state state) (state, error) {
-	switch inst.dest {
-	case AX:
-		state.ax -= word(inst.imm)
-	case DX:
-		state.dx -= word(inst.imm)
-	case CX:
-		state.cx -= word(inst.imm)
-	case SP:
-		state.sp -= word(inst.imm)
-	default:
-		return state, errors.Errorf("unknown register: %v", inst.dest)
+func execSub(inst instSub, state state, memory *memory) (state, error) {
+	var l, r int
+	var err error
+	if r, err = inst.src.read(state, memory); err != nil {
+		return state, err
 	}
-	return state, nil
+	if l, err = inst.dest.read(state, memory); err != nil {
+		return state, err
+	}
+	state, err = inst.dest.write(l-r, state, memory)
+	return state, err
 }
 
 func execSubReg16Reg16(inst instSubReg16Reg16, state state) (state, error) {
@@ -2830,8 +2827,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execShl(inst, state)
 	case instAdd:
 		return execAdd(inst, state)
-	case instSubReg16Imm8:
-		return execSubReg16Imm8(inst, state)
+	case instSub:
+		return execSub(inst, state, memory)
 	case instSubReg16Reg16:
 		return execSubReg16Reg16(inst, state)
 	case instSubReg8Reg8:
