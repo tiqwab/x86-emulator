@@ -493,49 +493,14 @@ func (operand sreg) write(v int, s state, m *memory) (state, error) {
 
 // --- instruction
 
-type instInt struct {
-	operand uint8
-}
-
-type instMov struct {
+type instAdd struct {
 	dest operand
 	src operand
 }
 
-type instShl struct {
+type instAnd struct {
 	dest operand
 	src operand
-}
-
-type instShr struct {
-	dest operand
-	src operand
-}
-
-type instSub struct {
-	dest operand
-	src operand
-}
-
-type instLea struct {
-	dest operand
-	src operandAddressing
-}
-
-type instPush struct {
-	src registerW
-}
-
-type instPushSreg struct {
-	src registerS
-}
-
-type instPop struct {
-	dest registerW
-}
-
-type instPopSreg struct {
-	dest registerS
 }
 
 type instCall struct {
@@ -546,26 +511,8 @@ type instCallAbsoluteIndirectMem16 struct {
 	offset word
 }
 
-type instRet struct {
+type instCld struct {
 
-}
-
-type instJmpRel16 struct {
-	rel int16
-}
-
-type instSti struct {
-
-}
-
-type instAnd struct {
-	dest operand
-	src operand
-}
-
-type instAdd struct {
-	dest operand
-	src operand
 }
 
 type instCmp struct {
@@ -573,7 +520,19 @@ type instCmp struct {
 	src operand
 }
 
-type instJneRel8 struct {
+type instDec struct {
+	dest registerW
+}
+
+type instInc struct {
+	dest registerW
+}
+
+type instInt struct {
+	operand uint8
+}
+
+type instJae struct {
 	rel8 int8
 }
 
@@ -581,8 +540,42 @@ type instJb struct {
 	rel8 int8
 }
 
-type instCld struct {
+type instJeRel8 struct {
+	rel8 int8
+}
 
+type instJmpRel16 struct {
+	rel int16
+}
+
+type instJneRel8 struct {
+	rel8 int8
+}
+
+type instLea struct {
+	dest operand
+	src operandAddressing
+}
+
+type instMov struct {
+	dest operand
+	src operand
+}
+
+type instPop struct {
+	dest registerW
+}
+
+type instPopSreg struct {
+	dest registerS
+}
+
+type instPush struct {
+	src registerW
+}
+
+type instPushSreg struct {
+	src registerS
 }
 
 type instRepeScasb struct {
@@ -601,29 +594,36 @@ type instRepStosb struct {
 
 }
 
+type instRet struct {
+
+}
+
+type instShl struct {
+	dest operand
+	src operand
+}
+
+type instShr struct {
+	dest operand
+	src operand
+}
+
+type instSti struct {
+
+}
+
 type instStosb struct {
 
 }
 
-type instJeRel8 struct {
-	rel8 int8
-}
-
-type instInc struct {
-	dest registerW
-}
-
-type instDec struct {
-	dest registerW
+type instSub struct {
+	dest operand
+	src operand
 }
 
 type instXor struct {
 	dest operand
 	src operand
-}
-
-type instJae struct {
-	rel8 int8
 }
 
 // --- ModR/M
@@ -2180,21 +2180,21 @@ func execCmp(inst instCmp, state state, memory *memory, segmentOverride *segment
 	return state, err
 }
 
-func execInstJneRel8(inst instJneRel8, state state) (state, error) {
+func execJneRel8(inst instJneRel8, state state) (state, error) {
 	if state.isNotActiveZF() {
 		state.ip = word(int16(state.ip) + int16(inst.rel8))
 	}
 	return state, nil
 }
 
-func execInstJb(inst instJb, state state) (state, error) {
+func execJb(inst instJb, state state) (state, error) {
 	if state.isActiveCF() {
 		state.ip = word(int16(state.ip) + int16(inst.rel8))
 	}
 	return state, nil
 }
 
-func execInstCld(inst instCld, state state) (state, error) {
+func execCld(inst instCld, state state) (state, error) {
 	state = state.resetDF()
 	return state, nil
 }
@@ -2351,115 +2351,111 @@ func execStosb(state state, memory *memory) (state, error) {
 	return state, nil
 }
 
-func execInstRepeScasb(inst instRepeScasb, state state, memory *memory) (state, error) {
+func execRepeScasb(inst instRepeScasb, state state, memory *memory) (state, error) {
 	count, err := state.readWordGeneralReg(CX)
 	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstRepeScasb")
+		return state, errors.Wrap(err, "failed in execRepeScasb")
 	}
 	for count > 0 && state.isActiveZF() {
 		state, err = execScasb(state, memory)
 		if err != nil {
-			return state, errors.Wrap(err, "failed in execInstRepeScasb")
+			return state, errors.Wrap(err, "failed in execRepeScasb")
 		}
 		count--
 	}
 	state, err = state.writeWordGeneralReg(CX, count)
 	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstRepeScasb")
+		return state, errors.Wrap(err, "failed in execRepeScasb")
 	}
 	return state, nil
 }
 
-func execInstRepeScasw(inst instRepeScasw, state state, memory *memory) (state, error) {
+func execRepeScasw(inst instRepeScasw, state state, memory *memory) (state, error) {
 	count, err := state.readWordGeneralReg(CX)
 	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstRepeScasw")
+		return state, errors.Wrap(err, "failed in execRepeScasw")
 	}
 	for count > 0 && state.isActiveZF() {
 		state, err = execScasw(state, memory)
 		if err != nil {
-			return state, errors.Wrap(err, "failed in execInstRepeScasw")
+			return state, errors.Wrap(err, "failed in execRepeScasw")
 		}
 		count--
 	}
 	state, err = state.writeWordGeneralReg(CX, count)
 	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstRepeScasw")
+		return state, errors.Wrap(err, "failed in execRepeScasw")
 	}
 	return state, nil
 }
 
-func execInstRepMovsb(inst instRepMovsb, state state, memory *memory) (state, error) {
+func execRepMovsb(inst instRepMovsb, state state, memory *memory) (state, error) {
 	count, err := state.readWordGeneralReg(CX)
 	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstRepeScasb")
+		return state, errors.Wrap(err, "failed in execRepeScasb")
 	}
 	for count > 0 {
 		state, err = execMovsb(state, memory)
 		if err != nil {
-			return state, errors.Wrap(err, "failed in execInstRepeScasb")
+			return state, errors.Wrap(err, "failed in execRepeScasb")
 		}
 		count--
 	}
 	state, err = state.writeWordGeneralReg(CX, count)
 	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstRepeScasb")
+		return state, errors.Wrap(err, "failed in execRepeScasb")
 	}
 	return state, nil
 }
 
-func execInstRepStosb(inst instRepStosb, state state, memory *memory) (state, error) {
+func execRepStosb(inst instRepStosb, state state, memory *memory) (state, error) {
 	count, err := state.readWordGeneralReg(CX)
 	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstRepeScasb")
+		return state, errors.Wrap(err, "failed in execRepeScasb")
 	}
 	for count > 0 {
 		state, err = execStosb(state, memory)
 		if err != nil {
-			return state, errors.Wrap(err, "failed in execInstRepeScasb")
+			return state, errors.Wrap(err, "failed in execRepeScasb")
 		}
 		count--
 	}
 	state, err = state.writeWordGeneralReg(CX, count)
 	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstRepeScasb")
+		return state, errors.Wrap(err, "failed in execRepeScasb")
 	}
 	return state, nil
 }
 
-func execInstStosb(inst instStosb, state state, memory *memory) (state, error) {
-	return execStosb(state, memory)
-}
-
-func execInstJeRel8(inst instJeRel8, state state) (state, error) {
+func execJeRel8(inst instJeRel8, state state) (state, error) {
 	if state.isActiveZF() {
 		state.ip = word(int16(state.ip) + int16(inst.rel8))
 	}
 	return state, nil
 }
 
-func execInstInc(inst instInc, state state) (state, error) {
+func execInc(inst instInc, state state) (state, error) {
 	v, err := state.readWordGeneralReg(inst.dest)
 	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstInc")
+		return state, errors.Wrap(err, "failed in execInc")
 	}
 	state, err = state.writeWordGeneralReg(inst.dest, v + 1)
 	// TODO: Set ZF (so it is necessary to handle overflow...)
 	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstInc")
+		return state, errors.Wrap(err, "failed in execInc")
 	}
 	return state, nil
 }
 
-func execInstDec(inst instDec, state state) (state, error) {
+func execDec(inst instDec, state state) (state, error) {
 	v, err := state.readWordGeneralReg(inst.dest)
 	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstInc")
+		return state, errors.Wrap(err, "failed in execInc")
 	}
 	state, err = state.writeWordGeneralReg(inst.dest, v - 1)
 	// TODO: Set ZF (so it is necessary to handle overflow...)
 	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstInc")
+		return state, errors.Wrap(err, "failed in execInc")
 	}
 	return state, nil
 }
@@ -2479,7 +2475,7 @@ func execXor(inst instXor, state state, memory *memory) (state, error) {
 	return state, err
 }
 
-func execInstJae(inst instJae, state state) (state, error) {
+func execJae(inst instJae, state state) (state, error) {
 	if state.isNotActiveCF() {
 		state.ip = word(int16(state.ip) + int16(inst.rel8))
 	}
@@ -2488,68 +2484,68 @@ func execInstJae(inst instJae, state state) (state, error) {
 
 func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
 	switch inst := shouldBeInst.(type) {
-	case instMov:
-		return execMov(inst, state, memory, segmentOverride)
-	case instShl:
-		return execShl(inst, state, memory)
-	case instShr:
-		return execShr(inst, state, memory)
 	case instAdd:
 		return execAdd(inst, state, memory)
-	case instSub:
-		return execSub(inst, state, memory)
-	case instLea:
-		return execLea(inst, state, memory)
-	case instInt:
-		return execInt(inst, state, memory)
-	case instPush:
-		return execPush(inst, state, memory)
-	case instPushSreg:
-		return execPushSreg(inst, state, memory)
-	case instPop:
-		return execPop(inst, state, memory)
-	case instPopSreg:
-		return execPopSreg(inst, state, memory)
+	case instAnd:
+		return execAnd(inst, state, memory)
 	case instCall:
 		return execCall(inst, state, memory)
 	case instCallAbsoluteIndirectMem16:
 		return execCallAbsoluteIndirectMem16(inst, state, memory)
-	case instRet:
-		return execRet(inst, state, memory)
-	case instJmpRel16:
-		return execJmpRel16(inst, state, memory)
-	case instSti:
-		return execSti(inst, state, memory)
-	case instAnd:
-		return execAnd(inst, state, memory)
+	case instCld:
+		return execCld(inst, state)
 	case instCmp:
 		return execCmp(inst, state, memory, segmentOverride)
-	case instJneRel8:
-		return execInstJneRel8(inst, state)
-	case instJb:
-		return execInstJb(inst, state)
-	case instCld:
-		return execInstCld(inst, state)
-	case instRepeScasb:
-		return execInstRepeScasb(inst, state, memory)
-	case instRepeScasw:
-		return execInstRepeScasw(inst, state, memory)
-	case instRepMovsb:
-		return execInstRepMovsb(inst, state, memory)
-	case instRepStosb:
-		return execInstRepStosb(inst, state, memory)
-	case instJeRel8:
-		return execInstJeRel8(inst, state)
-	case instInc:
-		return execInstInc(inst, state)
-	case instStosb:
-		return execInstStosb(inst, state, memory)
 	case instDec:
-		return execInstDec(inst, state)
+		return execDec(inst, state)
+	case instInc:
+		return execInc(inst, state)
+	case instInt:
+		return execInt(inst, state, memory)
+	case instJae:
+		return execJae(inst, state)
+	case instJb:
+		return execJb(inst, state)
+	case instJeRel8:
+		return execJeRel8(inst, state)
+	case instJmpRel16:
+		return execJmpRel16(inst, state, memory)
+	case instJneRel8:
+		return execJneRel8(inst, state)
+	case instLea:
+		return execLea(inst, state, memory)
+	case instMov:
+		return execMov(inst, state, memory, segmentOverride)
+	case instPop:
+		return execPop(inst, state, memory)
+	case instPopSreg:
+		return execPopSreg(inst, state, memory)
+	case instPush:
+		return execPush(inst, state, memory)
+	case instPushSreg:
+		return execPushSreg(inst, state, memory)
+	case instRepeScasb:
+		return execRepeScasb(inst, state, memory)
+	case instRepeScasw:
+		return execRepeScasw(inst, state, memory)
+	case instRepMovsb:
+		return execRepMovsb(inst, state, memory)
+	case instRepStosb:
+		return execRepStosb(inst, state, memory)
+	case instRet:
+		return execRet(inst, state, memory)
+	case instShl:
+		return execShl(inst, state, memory)
+	case instShr:
+		return execShr(inst, state, memory)
+	case instSti:
+		return execSti(inst, state, memory)
+	case instStosb:
+		return execStosb(state, memory)
+	case instSub:
+		return execSub(inst, state, memory)
 	case instXor:
 		return execXor(inst, state, memory)
-	case instJae:
-		return execInstJae(inst, state)
 	default:
 		return state, errors.Errorf("unknown inst: %T", shouldBeInst)
 	}
