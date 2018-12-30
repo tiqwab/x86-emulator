@@ -551,11 +551,6 @@ type instShrReg16Imm struct {
 	imm word
 }
 
-type instShlReg16Imm struct {
-	reg registerW
-	imm word
-}
-
 type instCmp struct {
 	dest operand
 	src operand
@@ -1423,30 +1418,30 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	// shr dx,1
 	// d1 /5
 	case 0xd1:
-		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xd1")
 		}
 
-		if mod == 3 {
-			switch reg {
+		if modRM.mod == 3 {
+			switch modRM.reg {
 			case 4:
-				reg, err := toRegisterW(uint8(rm))
+				dest, err := modRM.getEv(currentAddress, memory)
 				if err != nil {
-					return inst, -1, nil, errors.Wrap(err, "failed to parse registerW")
+					return inst, -1, nil, errors.Wrap(err, "failed to decode 0xd1")
 				}
-				inst = instShlReg16Imm{reg: reg, imm: 1}
+				inst = instShl{dest: dest, src: imm8{value: 1}}
 			case 5:
-				reg, err := toRegisterW(uint8(rm))
+				reg, err := toRegisterW(uint8(modRM.rm))
 				if err != nil {
 					return inst, -1, nil, errors.Wrap(err, "failed to parse registerW")
 				}
 				inst = instShrReg16Imm{reg: reg, imm: 1}
 			default:
-				return inst, -1, nil, errors.Errorf("not yet implemented for mod 0x%02x", mod)
+				return inst, -1, nil, errors.Errorf("not yet implemented for mod 0x%02x", modRM.mod)
 			}
 		} else {
-			return inst, -1, nil, errors.Errorf("not yet implemented for mod 0x%02x", mod)
+			return inst, -1, nil, errors.Errorf("not yet implemented for mod 0x%02x", modRM.mod)
 		}
 
 	// call rel16
@@ -2171,18 +2166,6 @@ func execShrReg16Imm(inst instShrReg16Imm, state state) (state, error) {
 	return state, nil
 }
 
-func execShlReg16Imm(inst instShlReg16Imm, state state) (state, error) {
-	v, err := state.readWordGeneralReg(inst.reg)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execShlReg16Imm")
-	}
-	state, err = state.writeWordGeneralReg(inst.reg, v << 1)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execShlReg16Imm")
-	}
-	return state, nil
-}
-
 func execCmp(inst instCmp, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
 	var l, r int
 	var err error
@@ -2569,8 +2552,6 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execAnd(inst, state, memory)
 	case instShrReg16Imm:
 		return execShrReg16Imm(inst, state)
-	case instShlReg16Imm:
-		return execShlReg16Imm(inst, state)
 	case instCmp:
 		return execCmp(inst, state, memory, segmentOverride)
 	case instJneRel8:
