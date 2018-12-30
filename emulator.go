@@ -30,7 +30,9 @@ type segmentOverride struct {
 	sreg registerS
 }
 
-// --- memory
+// -----------
+// memory
+// -----------
 
 type memory struct {
 	loadModule []byte
@@ -167,7 +169,9 @@ func (memory *memory) writeWord(at *address, w word) error {
 	return nil
 }
 
-// --- registers
+// --------------
+// registers
+// --------------
 
 type registerW uint8
 type registerB uint8
@@ -264,7 +268,9 @@ func toRegisterS(x uint8) (registerS, error) {
 	}
 }
 
-// --- operand
+// ------------
+// operand
+// ------------
 
 type operand interface {
 	read(state state, memory *memory) (int, error)
@@ -491,7 +497,9 @@ func (operand sreg) write(v int, s state, m *memory) (state, error) {
 	return s.writeWordSreg(operand.value, word(v))
 }
 
-// --- instruction
+// ----------------
+// instruction
+// ----------------
 
 type instAdd struct {
 	dest operand
@@ -626,8 +634,11 @@ type instXor struct {
 	src operand
 }
 
-// --- ModR/M
-// Symbols such as Eb, Gb come from Table A-2. One-byte Opcode Map
+// -----------
+// ModR/M
+//
+// symbols such as Eb, Gb come from Table A-2. One-byte Opcode Map
+// -----------
 
 type modRM struct {
 	mod byte
@@ -778,6 +789,10 @@ func (modRM modRM) getM(address *address, memory *memory) (operandAddressing, er
 		return nil, errors.Errorf("illegal or not yet implemented for mod: %d", modRM.mod)
 	}
 }
+
+// -------------
+// decoding
+// -------------
 
 // assume that reader for load module is passed
 // inst, read bytes, error
@@ -1540,7 +1555,10 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	return inst, currentAddress.realAddress() - initialRealAddress, nil, nil
 }
 
+// -------------
 // for int 21
+// -------------
+
 type intHandler func(*state, *memory) error
 type intHandlers map[uint8]intHandler
 
@@ -1578,6 +1596,10 @@ func intHandler09(s *state, memory *memory) error {
 	fmt.Print(string(bs))
 	return nil
 }
+
+// ---------
+// state
+// ---------
 
 // FIXME: Type general registers, segment registers respectively
 type state struct {
@@ -1918,7 +1940,9 @@ func (s state) popWord(memory *memory) (word, state, error) {
 	return w, s, nil
 }
 
-// --- execute instruction
+// ------------------------
+// execute instruction
+// ------------------------
 
 func execMov(inst instMov, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
 	var v int
@@ -2544,6 +2568,10 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return state, errors.Errorf("unknown inst: %T", shouldBeInst)
 	}
 }
+
+// -------------------------
+// Run x86 machine codes
+// -------------------------
 
 func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (state, error) {
 	parser := newParser(reader)
