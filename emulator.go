@@ -635,8 +635,21 @@ type modRM struct {
 	rm byte
 }
 
-func newModRM(at *address, memory *memory) (modRM, error) {
-	mod, reg, rm, err := decodeModRegRM(at, memory)
+func newModRM(at *address, mem *memory) (modRM, error) {
+	decodeModRegRM := func(a *address, m *memory) (byte, byte, byte, error) {
+		buf, err := m.readByte(a)
+		if err != nil {
+			return 0, 0, 0, errors.Wrap(err, "failed to parse byte")
+		}
+
+		mod := (buf & 0xc0) >> 6     // 0b11000000
+		reg := (buf & 0x38) >> 3     // 0b00111000
+		rm  := buf & 0x07 // 0b00000111
+
+		return mod, reg, rm, nil
+	}
+
+	mod, reg, rm, err := decodeModRegRM(at, mem)
 	return modRM{mod: mod, reg: reg, rm: rm}, err
 }
 
@@ -764,19 +777,6 @@ func (modRM modRM) getM(address *address, memory *memory) (operandAddressing, er
 	default:
 		return nil, errors.Errorf("illegal or not yet implemented for mod: %d", modRM.mod)
 	}
-}
-
-func decodeModRegRM(at *address, memory *memory) (byte, byte, byte, error) {
-	buf, err := memory.readByte(at)
-	if err != nil {
-		return 0, 0, 0, errors.Wrap(err, "failed to parse byte")
-	}
-
-	mod := (buf & 0xc0) >> 6     // 0b11000000
-	reg := (buf & 0x38) >> 3     // 0b00111000
-	rm  := buf & 0x07 // 0b00000111
-
-	return mod, reg, rm, nil
 }
 
 // assume that reader for load module is passed
