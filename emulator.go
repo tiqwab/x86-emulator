@@ -566,6 +566,11 @@ type instShlReg16Imm struct {
 	imm word
 }
 
+type instCmp struct {
+	dest operand
+	src operand
+}
+
 type instCmpMem8Imm8 struct {
 	offset word
 	imm8 int8
@@ -584,11 +589,6 @@ type instCmpReg8Imm8 struct {
 type instCmpReg16Imm16 struct {
 	reg16 registerW
 	imm16 int16
-}
-
-type instCmpReg16Reg16 struct {
-	first registerW
-	second registerW
 }
 
 type instJneRel8 struct {
@@ -911,25 +911,19 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	// cmp r16,r/m16
 	// 3b /r
 	case 0x3b:
-		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x2b")
 		}
-
-		switch mod {
-		case 3:
-			dest, err := toRegisterW(reg)
-			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to parse as registerW")
-			}
-			src, err := toRegisterW(uint8(rm))
-			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to parse as registerW")
-			}
-			inst = instCmpReg16Reg16{first: dest, second: src}
-		default:
-			return inst, -1, nil, errors.Errorf("unknown or not implemented for mod %d", mod)
+		dest, err := modRM.getGv()
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x2b")
 		}
+		src, err := modRM.getEv(currentAddress, memory)
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x2b")
+		}
+		inst = instCmp{dest: dest, src: src}
 
 	// cmp al,imm8
 	// 3c ib
@@ -2316,6 +2310,46 @@ func execShlReg16Imm(inst instShlReg16Imm, state state) (state, error) {
 	return state, nil
 }
 
+func execCmp(inst instCmp, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
+	var l, r int
+	var err error
+
+	// FIXME
+	initDS := state.ds
+	if segmentOverride != nil {
+		switch segmentOverride.sreg {
+		case ES:
+			state.ds = state.es
+		default:
+			return state, errors.Errorf("not yet implemented or illegal sreg: %#v", segmentOverride.sreg)
+		}
+	}
+
+	if r, err = inst.src.read(state, memory); err != nil {
+		state.ds = initDS
+		return state, err
+	}
+	if l, err = inst.dest.read(state, memory); err != nil {
+		state.ds = initDS
+		return state, err
+	}
+	if l == r {
+		state = state.setZF()
+		state = state.resetCF()
+	} else if l < r {
+		state = state.resetZF()
+		state = state.setCF()
+	} else {
+		state = state.resetZF()
+		state = state.resetCF()
+	}
+
+	if segmentOverride != nil {
+		state.ds = initDS
+	}
+	return state, err
+}
+
 func execInstCmpMem8Imm8(inst instCmpMem8Imm8, state state, memory *memory, segmentOverride *segmentOverride) (state, error) {
 	initDS := state.ds
 	if segmentOverride != nil {
@@ -2378,28 +2412,6 @@ func execInstCmpReg8Imm8(inst instCmpReg8Imm8, state state, memory *memory) (sta
 		state = state.setZF()
 		state = state.resetCF()
 	} else if v < uint8(inst.imm8) {
-		state = state.resetZF()
-		state = state.setCF()
-	} else {
-		state = state.resetZF()
-		state = state.resetCF()
-	}
-	return state, nil
-}
-
-func execInstCmpReg16Reg16(inst instCmpReg16Reg16, state state) (state, error) {
-	firstV, err := state.readWordGeneralReg(inst.first)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execCmpReg16Reg16")
-	}
-	secondV, err := state.readWordGeneralReg(inst.second)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execCmpReg16Reg16")
-	}
-	if firstV == secondV {
-		state = state.setZF()
-		state = state.resetCF()
-	} else if firstV < secondV {
 		state = state.resetZF()
 		state = state.setCF()
 	} else {
@@ -2779,14 +2791,14 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execShrReg16Imm(inst, state)
 	case instShlReg16Imm:
 		return execShlReg16Imm(inst, state)
+	case instCmp:
+		return execCmp(inst, state, memory, segmentOverride)
 	case instCmpMem8Imm8:
 		return execInstCmpMem8Imm8(inst, state, memory, segmentOverride)
 	case instCmpMem16Imm8:
 		return execInstCmpMem16Imm8(inst, state, memory)
 	case instCmpReg8Imm8:
 		return execInstCmpReg8Imm8(inst, state, memory)
-	case instCmpReg16Reg16:
-		return execInstCmpReg16Reg16(inst, state)
 	case instCmpReg16Imm16:
 		return execInstCmpReg16Imm16(inst, state)
 	case instJneRel8:
