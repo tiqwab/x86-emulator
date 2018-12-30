@@ -508,7 +508,7 @@ type instCall struct {
 }
 
 type instCallAbsoluteIndirectMem16 struct {
-	offset word
+	operand operand
 }
 
 type instCld struct {
@@ -1518,26 +1518,21 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 		inst = instCld{}
 
 	case 0xff:
-		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xff")
 		}
 
-		switch reg {
+		switch modRM.reg {
 		case 2:
-			if mod == 0 && rm == 6 {
-				offset, err := memory.readWord(currentAddress)
-				if err != nil {
-					return inst, -1, nil, errors.Wrap(err, "failed to parse word")
-				}
-				inst = instCallAbsoluteIndirectMem16{offset: offset}
-			} else {
-				return inst, -1, nil, errors.Errorf("not yet implemented")
+			operand, err := modRM.getEv(currentAddress, memory)
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to decode 0xc7")
 			}
+			inst = instCallAbsoluteIndirectMem16{operand: operand}
 		default:
-			return inst, -1, nil, errors.Errorf("illegal or not implemented for reg: %d", reg)
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xff")
 		}
-
 
 	default:
 		return inst, -1, nil, errors.Errorf("unknown opcode: 0x%02x", rawOpcode)
@@ -2080,16 +2075,15 @@ func execCall(inst instCall, state state, memory *memory) (state, error) {
 }
 
 func execCallAbsoluteIndirectMem16(inst instCallAbsoluteIndirectMem16, state state, memory *memory) (state, error) {
+	var v int
 	state, err := state.pushWord(state.ip, memory)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execCallAbsoluteIndirectMem16")
 	}
-	address := newAddressFromWord(state.ds, inst.offset)
-	callOffset, err := memory.readWord(address)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execCallAbsoluteIndirectMem16")
+	if v, err = inst.operand.read(state, memory); err != nil {
+		return state, err
 	}
-	state.ip = callOffset
+	state.ip = word(v)
 	return state, nil
 }
 

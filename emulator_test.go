@@ -518,7 +518,8 @@ func TestDecodeCallAbsoluteIndirectMem16(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instCallAbsoluteIndirectMem16{offset: 0x0052}
+	operand := mem16Disp16{offset: 0x0052}
+	expected := instCallAbsoluteIndirectMem16{operand: operand}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
