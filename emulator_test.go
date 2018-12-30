@@ -891,7 +891,9 @@ func TestDecodeXorReg16Reg16(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instXorReg16Reg16{dest: BP, src: BP}
+	dest := reg16{value: BP}
+	src := reg16{value: BP}
+	expected := instXor{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}

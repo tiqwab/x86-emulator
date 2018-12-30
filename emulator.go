@@ -617,9 +617,9 @@ type instDec struct {
 	dest registerW
 }
 
-type instXorReg16Reg16 struct {
-	dest registerW
-	src registerW
+type instXor struct {
+	dest operand
+	src operand
 }
 
 type instJae struct {
@@ -890,25 +890,19 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	// xor r16,r/m16
 	// 33 /r
 	case 0x33:
-		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x3b")
 		}
-
-		switch mod {
-		case 3:
-			dest, err := toRegisterW(reg)
-			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to parse as registerW")
-			}
-			src, err := toRegisterW(uint8(rm))
-			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to parse as registerW")
-			}
-			inst = instXorReg16Reg16{dest: dest, src: src}
-		default:
-			return inst, -1, nil, errors.Errorf("unknown or not implemented for mod %d", mod)
+		dest, err := modRM.getGv()
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x3b")
 		}
+		src, err := modRM.getEv(currentAddress, memory)
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x3b")
+		}
+		inst = instXor{dest: dest, src: src}
 
 	// cmp r16,r/m16
 	// 3b /r
@@ -2470,21 +2464,19 @@ func execInstDec(inst instDec, state state) (state, error) {
 	return state, nil
 }
 
-func execInstXorReg16Reg16(inst instXorReg16Reg16, state state) (state, error) {
-	destV, err := state.readWordGeneralReg(inst.dest)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstXorReg16Reg16")
+func execXor(inst instXor, state state, memory *memory) (state, error) {
+	var l, r int
+	var err error
+
+	if r, err = inst.src.read(state, memory); err != nil {
+		return state, err
 	}
-	srcV, err := state.readWordGeneralReg(inst.src)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstXorReg16Reg16")
+	if l, err = inst.dest.read(state, memory); err != nil {
+		return state, err
 	}
-	v := destV ^ srcV
-	state, err = state.writeWordGeneralReg(inst.dest, v)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstXorReg16Reg16")
-	}
-	return state, nil
+
+	state, err = inst.dest.write(l ^ r, state, memory)
+	return state, err
 }
 
 func execInstJae(inst instJae, state state) (state, error) {
@@ -2554,8 +2546,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execInstStosb(inst, state, memory)
 	case instDec:
 		return execInstDec(inst, state)
-	case instXorReg16Reg16:
-		return execInstXorReg16Reg16(inst, state)
+	case instXor:
+		return execXor(inst, state, memory)
 	case instJae:
 		return execInstJae(inst, state)
 	default:
