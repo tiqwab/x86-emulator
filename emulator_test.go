@@ -302,7 +302,9 @@ func TestDecodeAddAX(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instAdd{dest: AX, imm: 0x0001}
+	dest := reg16{value: AX}
+	src := imm8{value: 0x01}
+	expected := instAdd{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
@@ -315,7 +317,9 @@ func TestDecodeAddCX(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instAdd{dest: CX, imm: 0x0001}
+	dest := reg16{value: CX}
+	src := imm8{value: 0x01}
+	expected := instAdd{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
@@ -631,7 +635,9 @@ func TestDecodeAddReg16Reg16(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instAddReg16Reg16{dest: BX, src: SP}
+	dest := reg16{value: BX}
+	src := reg16{value: SP}
+	expected := instAdd{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}

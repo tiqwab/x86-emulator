@@ -484,11 +484,6 @@ type instShl struct {
 	imm uint8
 }
 
-type instAdd struct {
-	dest registerW
-	imm uint8
-}
-
 type instSub struct {
 	dest operand
 	src operand
@@ -546,9 +541,9 @@ type instAnd struct {
 	src operand
 }
 
-type instAddReg16Reg16 struct {
-	dest registerW
-	src registerW
+type instAdd struct {
+	dest operand
+	src operand
 }
 
 type instShrReg16Imm struct {
@@ -763,24 +758,19 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	// add r16,r/m16
 	// 03 /r
 	case 0x03:
-		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x03")
 		}
-
-		if mod == 3 {
-			dest, err := toRegisterW(uint8(reg))
-			if err != nil {
-				return inst, -1, nil, errors.Errorf("illegal reg value for registerW: %d", reg)
-			}
-			src, err := toRegisterW(uint8(rm))
-			if err != nil {
-				return inst, -1, nil, errors.Errorf("illegal rm value for registerW: %d", rm)
-			}
-			inst = instAddReg16Reg16{dest: dest, src: src}
-		} else {
-			return inst, -1, nil, errors.Errorf("unknown or not implemented for mod %d", mod)
+		dest, err := modRM.getGv()
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x03")
 		}
+		src, err := modRM.getEv(currentAddress, memory)
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x03")
+		}
+		inst = instAdd{dest: dest, src: src}
 
 	// push ds
 	// 1e
@@ -1119,54 +1109,30 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x83")
 		}
+		dest, err := modRM.getEv(currentAddress, memory)
+		if err != nil {
+			return nil, -1, nil, errors.Errorf("failed to decode 0x83")
+		}
+		b, err := memory.readBytes(currentAddress, 1)
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x83")
+		}
+		src, err := newImm8(bytes.NewReader(b))
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x83")
+		}
 
 		switch modRM.reg {
 		// add
 		case 0:
-			if modRM.mod != 3 {
-				return nil, -1, nil, errors.Errorf("expect mod is 0b11 but %02b", modRM.mod)
-			}
-			imm, err := memory.readByte(currentAddress)
-			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
-			}
-
-			dest, err := toRegisterW(modRM.rm)
-			if err != nil {
-				return nil, -1, nil, errors.Wrap(err, "failed to parse as registerW")
-			}
-			inst = instAdd{dest: dest, imm: imm}
+			inst = instAdd{dest: dest, src: src}
 
 		// sub
 		case 5:
-			dest, err := modRM.getEv(currentAddress, memory)
-			if err != nil {
-				return nil, -1, nil, errors.Errorf("failed to decode 0x83")
-			}
-			b, err := memory.readBytes(currentAddress, 1)
-			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to decode 0x83")
-			}
-			src, err := newImm8(bytes.NewReader(b))
-			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to decode 0x83")
-			}
 			inst = instSub{dest: dest, src: src}
 
 		// cmp
 		case 7:
-			dest, err := modRM.getEv(currentAddress, memory)
-			if err != nil {
-				return nil, -1, nil, errors.Errorf("failed to decode 0x83")
-			}
-			b, err := memory.readBytes(currentAddress, 1)
-			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to decode 0x83")
-			}
-			src, err := newImm8(bytes.NewReader(b))
-			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to decode 0x83")
-			}
 			inst = instCmp{dest: dest, src: src}
 
 		default:
@@ -1988,24 +1954,6 @@ func execShl(inst instShl, state state) (state, error) {
 	return state, nil
 }
 
-func execAdd(inst instAdd, state state) (state, error) {
-	switch inst.dest {
-	case AX:
-		state.ax += word(inst.imm)
-	case CX:
-		state.cx += word(inst.imm)
-	case DX:
-		state.dx += word(inst.imm)
-	case BX:
-		state.bx += word(inst.imm)
-	case SP:
-		state.sp += word(inst.imm)
-	default:
-		return state, errors.Errorf("unknown register: %v", inst.dest)
-	}
-	return state, nil
-}
-
 func execSub(inst instSub, state state, memory *memory) (state, error) {
 	var l, r int
 	var err error
@@ -2197,20 +2145,19 @@ func execAnd(inst instAnd, state state, memory *memory) (state, error) {
 	return state, err
 }
 
-func execAddReg16Reg16(inst instAddReg16Reg16, state state) (state, error) {
-	srcValue, err := state.readWordGeneralReg(inst.src)
-	if err != nil {
-		return state, errors.Errorf("failed in execAddReg16Reg16")
+func execAdd(inst instAdd, state state, memory *memory) (state, error) {
+	var l, r int
+	var err error
+
+	if r, err = inst.src.read(state, memory); err != nil {
+		return state, err
 	}
-	destValue, err := state.readWordGeneralReg(inst.dest)
-	if err != nil {
-		return state, errors.Errorf("failed in execAddReg16Reg16")
+	if l, err = inst.dest.read(state, memory); err != nil {
+		return state, err
 	}
-	state, err = state.writeWordGeneralReg(inst.dest, (srcValue + destValue))
-	if err != nil {
-		return state, errors.Errorf("failed in execAddReg16Reg16")
-	}
-	return state, nil
+
+	state, err = inst.dest.write(l+r, state, memory)
+	return state, err
 }
 
 func execShrReg16Imm(inst instShrReg16Imm, state state) (state, error) {
@@ -2592,7 +2539,7 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 	case instShl:
 		return execShl(inst, state)
 	case instAdd:
-		return execAdd(inst, state)
+		return execAdd(inst, state, memory)
 	case instSub:
 		return execSub(inst, state, memory)
 	case instLea:
@@ -2621,8 +2568,6 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execSti(inst, state, memory)
 	case instAnd:
 		return execAnd(inst, state, memory)
-	case instAddReg16Reg16:
-		return execAddReg16Reg16(inst, state)
 	case instShrReg16Imm:
 		return execShrReg16Imm(inst, state)
 	case instShlReg16Imm:
