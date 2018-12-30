@@ -666,7 +666,9 @@ func TestDecodeCmpWithSegmentOverride(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instCmpMem8Imm8{offset: 0x0036, imm8: 0x00}
+	dest := mem8Disp16{offset: 0x0036}
+	src := imm8{value: 0x00}
+	expected := instCmp{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
