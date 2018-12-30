@@ -373,7 +373,9 @@ func TestDecodeSubReg16Imm16(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instSubReg16Imm16{dest: SP, imm16: 0x0002}
+	dest := reg16{value: SP}
+	src := imm16{value: 0x0002}
+	expected := instSub{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
