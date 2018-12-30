@@ -271,6 +271,11 @@ type operand interface {
 	write(value int, state state, memory *memory) (state, error) // FIXME: state passsed as pointer (use it as mutable)
 }
 
+type operandAddressing interface {
+	operand
+	address(state state) (*address, error)
+}
+
 type imm8 struct {
 	value int8
 }
@@ -350,7 +355,7 @@ type mem8BaseDisp8 struct {
 }
 
 func (operand mem8BaseDisp8) read(s state, m *memory) (int, error) {
-	address, err := s.addressFromBaseAndDisp(operand.base, int(operand.disp8))
+	address, err := operand.address(s)
 	if err != nil {
 		return 0, errors.Wrap(err, "failed to read mem8BaseDisp8")
 	}
@@ -362,7 +367,7 @@ func (operand mem8BaseDisp8) read(s state, m *memory) (int, error) {
 }
 
 func (operand mem8BaseDisp8) write(v int, s state, m *memory) (state, error) {
-	address, err := s.addressFromBaseAndDisp(operand.base, int(operand.disp8))
+	address, err := operand.address(s)
 	if err != nil {
 		return s, errors.Wrap(err, "failed to write to mem8BaseDisp8")
 	}
@@ -373,13 +378,17 @@ func (operand mem8BaseDisp8) write(v int, s state, m *memory) (state, error) {
 	return s, nil
 }
 
+func (operand mem8BaseDisp8) address(s state) (*address, error) {
+	return s.addressFromBaseAndDisp(operand.base, int(operand.disp8))
+}
+
 // [disp16] as byte
 type mem8Disp16 struct {
 	offset word // this can be minus?
 }
 
 func (operand mem8Disp16) read(s state, m *memory) (int, error) {
-	address := newAddressFromWord(s.ds, operand.offset)
+	address, _ := operand.address(s)
 	v, err := m.readInt8(address)
 	if err != nil {
 		return 0, errors.Wrap(err, "failed to read mem8Disp16")
@@ -388,12 +397,17 @@ func (operand mem8Disp16) read(s state, m *memory) (int, error) {
 }
 
 func (operand mem8Disp16) write(v int, s state, m *memory) (state, error) {
-	address := newAddressFromWord(s.ds, operand.offset)
+	address, _ := operand.address(s)
 	err := m.writeByte(address, byte(v))
 	if err != nil {
 		return s, errors.Wrap(err, "failed to write to mem8BaseDisp8")
 	}
 	return s, nil
+}
+
+func (operand mem8Disp16) address(s state) (*address, error) {
+	address := newAddressFromWord(s.ds, operand.offset)
+	return address, nil
 }
 
 // [reg] + disp8 as word
@@ -403,7 +417,7 @@ type mem16BaseDisp8 struct {
 }
 
 func (operand mem16BaseDisp8) read(s state, m *memory) (int, error) {
-	address, err := s.addressFromBaseAndDisp(operand.base, int(operand.disp8))
+	address, err := operand.address(s)
 	if err != nil {
 		return 0, errors.Wrap(err, "failed to read mem8BaseDisp8")
 	}
@@ -415,7 +429,7 @@ func (operand mem16BaseDisp8) read(s state, m *memory) (int, error) {
 }
 
 func (operand mem16BaseDisp8) write(v int, s state, m *memory) (state, error) {
-	address, err := s.addressFromBaseAndDisp(operand.base, int(operand.disp8))
+	address, err := operand.address(s)
 	if err != nil {
 		return s, errors.Wrap(err, "failed to write to mem8BaseDisp8")
 	}
@@ -426,13 +440,17 @@ func (operand mem16BaseDisp8) write(v int, s state, m *memory) (state, error) {
 	return s, nil
 }
 
+func (operand mem16BaseDisp8) address(s state) (*address, error) {
+	return s.addressFromBaseAndDisp(operand.base, int(operand.disp8))
+}
+
 // [disp16] as word
 type mem16Disp16 struct {
 	offset word // this can be minus?
 }
 
 func (operand mem16Disp16) read(s state, m *memory) (int, error) {
-	address := newAddressFromWord(s.ds, operand.offset)
+	address, _ := operand.address(s)
 	v, err := m.readInt16(address)
 	if err != nil {
 		return 0, errors.Wrap(err, "failed to read mem8Disp16")
@@ -441,12 +459,17 @@ func (operand mem16Disp16) read(s state, m *memory) (int, error) {
 }
 
 func (operand mem16Disp16) write(v int, s state, m *memory) (state, error) {
-	address := newAddressFromWord(s.ds, operand.offset)
+	address, _ := operand.address(s)
 	err := m.writeWord(address, word(v))
 	if err != nil {
 		return s, errors.Wrap(err, "failed to write to mem8BaseDisp8")
 	}
 	return s, nil
+}
+
+func (operand mem16Disp16) address(s state) (*address, error) {
+	address := newAddressFromWord(s.ds, operand.offset)
+	return address, nil
 }
 
 // sreg
@@ -495,14 +518,8 @@ type instSub struct {
 }
 
 type instLea struct {
-	dest registerW
-	address word
-}
-
-type instLeaReg16Disp8 struct {
-	dest registerW
-	base registerW
-	disp8 int8
+	dest operand
+	src operandAddressing
 }
 
 type instPush struct {
@@ -711,6 +728,42 @@ func (modRM modRM) getGv() (operand, error) {
 
 func (modRM modRM) getSw() (operand, error) {
 	return newSreg(modRM.reg)
+}
+
+// based on mem8, but size is not necessary
+func (modRM modRM) getM(address *address, memory *memory) (operandAddressing, error) {
+	switch modRM.mod {
+	case 0:
+		switch modRM.rm {
+		case 6:
+			offset, err := memory.readWord(address)
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to getEb")
+			}
+			return mem8Disp16{offset: offset}, nil
+		default:
+			return nil, errors.Errorf("illegal or not yet implemeted for rm: %d", modRM.rm)
+		}
+	case 1:
+		disp8, err := memory.readInt8(address)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to getEb")
+		}
+		switch modRM.rm {
+		case 4:
+			return mem8BaseDisp8{base: SI, disp8: disp8}, nil
+		case 5:
+			return mem8BaseDisp8{base: DI, disp8: disp8}, nil
+		case 6:
+			return mem8BaseDisp8{base: BP, disp8: disp8}, nil
+		case 7:
+			return mem8BaseDisp8{base: BX, disp8: disp8}, nil
+		default:
+			return nil, errors.Errorf("illegal or not yet implemeted for rm: %d", modRM.rm)
+		}
+	default:
+		return nil, errors.Errorf("illegal or not yet implemented for mod: %d", modRM.mod)
+	}
 }
 
 func decodeModRegRM(at *address, memory *memory) (byte, byte, byte, error) {
@@ -1222,42 +1275,19 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	// lea r16,m
 	// 8d /r
 	case 0x8d:
-		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8d")
 		}
-
-		switch mod {
-		case 0:
-			switch rm {
-			case 6:
-				dest, err := toRegisterW(reg)
-				if err != nil {
-					return inst, -1, nil, errors.Wrap(err, "illegal reg value for registerW")
-				}
-				address, err := memory.readWord(currentAddress)
-				if err != nil {
-					return inst, -1, nil, errors.Wrap(err, "failed to parse address of lea")
-				}
-				inst = instLea{dest: dest, address: address}
-			default:
-				return inst, -1, nil, errors.Errorf("not yet implemented for mod: %d", mod)
-			}
-		case 1:
-			dest, err := toRegisterW(uint8(reg))
-			if err != nil {
-				return inst, -1, nil, errors.Errorf("failed to parse as registerW")
-			}
-			disp8, err := memory.readInt8(currentAddress)
-			switch rm {
-			case 5:
-				inst = instLeaReg16Disp8{dest: dest, base: DI, disp8: disp8}
-			default:
-				return inst, -1, nil, errors.Errorf("not yet implemented for rm: %d", rm)
-			}
-		default:
-			return inst, -1, nil, errors.Errorf("not yet implemented for mod: %d", mod)
+		dest, err := modRM.getGv()
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8d")
 		}
+		src, err := modRM.getM(currentAddress, memory)
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8d")
+		}
+		inst = instLea{dest: dest, src: src}
 
 	// 8e /r
 	// mov Sreg,r/m16
@@ -1971,62 +2001,14 @@ func execSub(inst instSub, state state, memory *memory) (state, error) {
 	return state, err
 }
 
-func execLea(inst instLea, state state) (state, error) {
-	switch inst.dest {
-	case AX:
-		state.ax = inst.address
-	case CX:
-		state.cx = inst.address
-	case DX:
-		state.dx = inst.address
-	case BX:
-		state.bx = inst.address
-	case BP:
-		state.bp = inst.address
-	case SP:
-		state.sp = inst.address
-	case SI:
-		state.si = inst.address
-	case DI:
-		state.di = inst.address
-	default:
-		return state, errors.Errorf("unknown register: %v", inst.dest)
+func execLea(inst instLea, state state, memory *memory) (state, error) {
+	var address *address
+	var err error
+	if address, err = inst.src.address(state); err != nil {
+		return state, err
 	}
-	return state, nil
-}
-
-func execInstLeaReg16Disp8(inst instLeaReg16Disp8, state state, memory *memory) (state, error) {
-	vBase, err := state.readWordGeneralReg(inst.base)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstLeaReg16Disp8")
-	}
-	vDS, err := state.readWordSreg(DS)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstLeaReg16Disp8")
-	}
-	address := newAddressFromWord(vDS, vBase)
-	leaVal := word(address.realAddress()) + word(inst.disp8)
-	switch inst.dest {
-	case AX:
-		state.ax = leaVal
-	case CX:
-		state.cx = leaVal
-	case DX:
-		state.dx = leaVal
-	case BX:
-		state.bx = leaVal
-	case SP:
-		state.sp = leaVal
-	case BP:
-		state.bp = leaVal
-	case SI:
-		state.si = leaVal
-	case DI:
-		state.di = leaVal
-	default:
-		return state, errors.Errorf("unknown register: %v", inst.dest)
-	}
-	return state, nil
+	state, err = inst.dest.write(int(address.offset), state, memory)
+	return state, err
 }
 
 func execInt(inst instInt, state state, memory *memory) (state, error) {
@@ -2525,9 +2507,7 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 	case instSub:
 		return execSub(inst, state, memory)
 	case instLea:
-		return execLea(inst, state)
-	case instLeaReg16Disp8:
-		return execInstLeaReg16Disp8(inst, state, memory)
+		return execLea(inst, state, memory)
 	case instInt:
 		return execInt(inst, state, memory)
 	case instPush:
@@ -2613,7 +2593,7 @@ func runExeWithCustomIntHandlers(reader io.Reader, intHandlers intHandlers) (sta
 		if s.shouldExit {
 			break
 		}
-		// x, _ := s.readWordGeneralReg(BP)
+		// x, _ := s.readWordGeneralReg(DX)
 		// debug.printf("0x%04x\n", x)
 		// debug.printf("0x%08x\n", s.eflags)
 		// y, _ := s.readWordSreg(DS)

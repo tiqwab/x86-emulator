@@ -381,7 +381,9 @@ func TestDecodeLeaDx(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instLea{dest: DX, address: 0x0002}
+	dest := reg16{value: DX}
+	src := mem8Disp16{offset: 0x0002}
+	expected := instLea{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
@@ -394,7 +396,9 @@ func TestDecodeLeaReg16Disp8(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instLeaReg16Disp8{dest: SI, base: DI, disp8: -1}
+	dest := reg16{value: SI}
+	src := mem8BaseDisp8{base: DI, disp8: -1}
+	expected := instLea{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
@@ -1034,6 +1038,8 @@ func TestInt21_09(t *testing.T) {
 		os.Stdout = originalStdout
 		return err
 	}
+
+	// debug = debugT(true)
 
 	_, err = runExeWithCustomIntHandlers(bytes.NewReader(b), intHandlers)
 	if err != nil {
