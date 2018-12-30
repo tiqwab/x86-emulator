@@ -586,11 +586,6 @@ type instCmpReg8Imm8 struct {
 	imm8 int8
 }
 
-type instCmpReg16Imm16 struct {
-	reg16 registerW
-	imm16 int16
-}
-
 type instJneRel8 struct {
 	rel8 int8
 }
@@ -913,15 +908,15 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0x3b:
 		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x2b")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x3b")
 		}
 		dest, err := modRM.getGv()
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x2b")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x3b")
 		}
 		src, err := modRM.getEv(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x2b")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x3b")
 		}
 		inst = instCmp{dest: dest, src: src}
 
@@ -1145,20 +1140,20 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 		case 7:
 			// cmp r/m16,imm16
 			// 81 /7 iw
-			switch modRM.mod {
-			case 3:
-				reg16, err := toRegisterW(uint8(modRM.rm))
-				if err != nil {
-					return inst, -1, nil, errors.Wrap(err, "failed to parse registerW")
-				}
-				imm16, err := memory.readWord(currentAddress)
-				if err != nil {
-					return inst, -1, nil, errors.Wrap(err, "failed to parse word")
-				}
-				inst = instCmpReg16Imm16{reg16: reg16, imm16: int16(imm16)}
-			default:
-				return inst, -1, nil, errors.Errorf("illegal or not implementedf for mod: %d", modRM.mod)
+			dest, err := modRM.getEv(currentAddress, memory)
+			if err != nil {
+				return nil, -1, nil, errors.Errorf("failed to decode 0x81")
 			}
+			b, err := memory.readBytes(currentAddress, 2)
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to decode 0x81")
+			}
+			src, err := newImm16(bytes.NewReader(b))
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to decode 0x81")
+			}
+			inst = instCmp{dest: dest, src: src}
+
 		default:
 			return inst, -1, nil, errors.Errorf("unknown reg value: %d", modRM.reg)
 		}
@@ -2421,24 +2416,6 @@ func execInstCmpReg8Imm8(inst instCmpReg8Imm8, state state, memory *memory) (sta
 	return state, nil
 }
 
-func execInstCmpReg16Imm16(inst instCmpReg16Imm16, state state) (state, error) {
-	vReg, err := state.readWordGeneralReg(inst.reg16)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstCmpReg16Imm16")
-	}
-	if int16(vReg) == inst.imm16 {
-		state = state.setZF()
-		state = state.resetCF()
-	} else if int16(vReg) < inst.imm16 {
-		state = state.resetZF()
-		state = state.setCF()
-	} else {
-		state = state.resetZF()
-		state = state.resetCF()
-	}
-	return state, nil
-}
-
 func execInstJneRel8(inst instJneRel8, state state) (state, error) {
 	if state.isNotActiveZF() {
 		state.ip = word(int16(state.ip) + int16(inst.rel8))
@@ -2799,8 +2776,6 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execInstCmpMem16Imm8(inst, state, memory)
 	case instCmpReg8Imm8:
 		return execInstCmpReg8Imm8(inst, state, memory)
-	case instCmpReg16Imm16:
-		return execInstCmpReg16Imm16(inst, state)
 	case instJneRel8:
 		return execInstJneRel8(inst, state)
 	case instJb:

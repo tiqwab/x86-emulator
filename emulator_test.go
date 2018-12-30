@@ -735,7 +735,9 @@ func TestDecodeCmpReg16Imm16(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instCmpReg16Imm16{reg16: BX, imm16: 0x0064}
+	dest := reg16{value: BX}
+	src := imm16{value: 0x0064}
+	expected := instCmp{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
