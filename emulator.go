@@ -480,8 +480,8 @@ type instMov struct {
 }
 
 type instShl struct {
-	register registerW
-	imm uint8
+	dest operand
+	src operand
 }
 
 type instSub struct {
@@ -1355,30 +1355,30 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 		inst = instMov{dest: dest, src: src}
 
 	// shl r/m16,imm8
-	// FIXME: handle memory address as source
 	case 0xc1:
-		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xc1")
+		}
+		dest, err := modRM.getEv(currentAddress, memory)
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xc1")
+		}
+		bs, err := memory.readBytes(currentAddress, 1)
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xc1")
+		}
+		src, err := newImm8(bytes.NewReader(bs))
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xc1")
 		}
 
-		if mod != 3 {
-			return nil, -1, nil, errors.Errorf("expect mod is 0b11 but %02b", mod)
+		switch modRM.reg {
+		case 4:
+			inst = instShl{dest: dest, src: src}
+		default:
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xc1")
 		}
-		if reg != 4 {
-			return nil, -1, nil, errors.Errorf("expect reg is /4 but %d", reg)
-		}
-
-		imm, err := memory.readByte(currentAddress)
-		if err != nil {
-			return nil, -1, nil, errors.Wrap(err, "failed to parse imm8")
-		}
-
-		dest, err := toRegisterW(rm)
-		if err != nil {
-			return nil, -1, nil, errors.Wrap(err, "failed to parse as registerW")
-		}
-		inst = instShl{register: dest, imm: imm}
 
 	// ret (near return)
 	case 0xc3:
@@ -1938,20 +1938,19 @@ func execMov(inst instMov, state state, memory *memory, segmentOverride *segment
 	return state, err
 }
 
-func execShl(inst instShl, state state) (state, error) {
-	switch inst.register {
-	case AX:
-		state.ax <<= inst.imm
-	case CX:
-		state.cx <<= inst.imm
-	case DX:
-		state.dx <<= inst.imm
-	case BX:
-		state.bx <<= inst.imm
-	default:
-		return state, errors.Errorf("unknown register: %v", inst.register)
+func execShl(inst instShl, state state, memory *memory) (state, error) {
+	var l, r int
+	var err error
+
+	if r, err = inst.src.read(state, memory); err != nil {
+		return state, err
 	}
-	return state, nil
+	if l, err = inst.dest.read(state, memory); err != nil {
+		return state, err
+	}
+
+	state, err = inst.dest.write(l << uint(r), state, memory)
+	return state, err
 }
 
 func execSub(inst instSub, state state, memory *memory) (state, error) {
@@ -2537,7 +2536,7 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 	case instMov:
 		return execMov(inst, state, memory, segmentOverride)
 	case instShl:
-		return execShl(inst, state)
+		return execShl(inst, state, memory)
 	case instAdd:
 		return execAdd(inst, state, memory)
 	case instSub:

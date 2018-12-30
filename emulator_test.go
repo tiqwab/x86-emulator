@@ -269,19 +269,6 @@ func TestDecodeMovMem16Disp8Reg16(t *testing.T) {
 	}
 }
 
-func TestDecodeShlAX(t *testing.T) {
-	// shl ax,1
-	var reader io.Reader = bytes.NewReader([]byte{0xc1, 0xe0, 0x01})
-	actual, _, _, err := decodeInst(reader)
-	if err != nil {
-		t.Errorf("%+v", err)
-	}
-	expected := instShl{register: AX, imm: 0x0001}
-	if actual != expected {
-		t.Errorf("expected %v but actual %v", expected, actual)
-	}
-}
-
 func TestDecodeShlCX(t *testing.T) {
 	// shl cx,1
 	var reader io.Reader = bytes.NewReader([]byte{0xc1, 0xe1, 0x01})
@@ -289,7 +276,9 @@ func TestDecodeShlCX(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instShl{register: CX, imm: 0x0001}
+	dest := reg16{value: CX}
+	src := imm8{value: 0x01}
+	expected := instShl{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
