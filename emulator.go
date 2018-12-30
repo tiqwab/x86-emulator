@@ -808,6 +808,11 @@ func decodeInst(reader io.Reader) (interface{}, int, *segmentOverride, error) {
 
 // inst, read bytes, register overriding, error
 func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{}, int, *segmentOverride, error) {
+	failureFunc := func(opcode byte, err error) (interface{}, int, *segmentOverride, error) {
+		msg := fmt.Sprintf("failed to decode %02x", opcode)
+		return nil, -1, nil, errors.Wrap(err, msg)
+	}
+
 	var inst interface{}
 	currentAddress := initialAddress
 	initialRealAddress := initialAddress.realAddress()
@@ -823,15 +828,15 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0x03:
 		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x03")
+			return failureFunc(rawOpcode, err)
 		}
 		dest, err := modRM.getGv()
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x03")
+			return failureFunc(rawOpcode, err)
 		}
 		src, err := modRM.getEv(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x03")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instAdd{dest: dest, src: src}
 
@@ -848,15 +853,15 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0x20:
 		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x20")
+			return failureFunc(rawOpcode, err)
 		}
 		dest, err := modRM.getEb(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x20")
+			return failureFunc(rawOpcode, err)
 		}
 		src, err := modRM.getGb()
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x20")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instAnd{dest: dest, src: src}
 
@@ -864,7 +869,7 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0x26:
 		inst, _, _, err := decodeInstWithMemory(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode")
+			return failureFunc(rawOpcode, err)
 		}
 		return inst, currentAddress.realAddress() - initialRealAddress, &segmentOverride{sreg: ES}, nil
 
@@ -873,15 +878,15 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0x2a:
 		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x2a")
+			return failureFunc(rawOpcode, err)
 		}
 		dest, err := modRM.getGb()
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x2a")
+			return failureFunc(rawOpcode, err)
 		}
 		src, err := modRM.getEb(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x2a")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instSub{dest: dest, src: src}
 
@@ -890,15 +895,15 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0x2b:
 		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x2b")
+			return failureFunc(rawOpcode, err)
 		}
 		dest, err := modRM.getGv()
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x2b")
+			return failureFunc(rawOpcode, err)
 		}
 		src, err := modRM.getEv(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x2b")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instSub{dest: dest, src: src}
 
@@ -907,15 +912,15 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0x33:
 		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x3b")
+			return failureFunc(rawOpcode, err)
 		}
 		dest, err := modRM.getGv()
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x3b")
+			return failureFunc(rawOpcode, err)
 		}
 		src, err := modRM.getEv(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x3b")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instXor{dest: dest, src: src}
 
@@ -924,15 +929,15 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0x3b:
 		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x3b")
+			return failureFunc(rawOpcode, err)
 		}
 		dest, err := modRM.getGv()
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x3b")
+			return failureFunc(rawOpcode, err)
 		}
 		src, err := modRM.getEv(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x3b")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instCmp{dest: dest, src: src}
 
@@ -941,11 +946,11 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0x3c:
 		b, err := memory.readBytes(currentAddress, 1)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x3c")
+			return failureFunc(rawOpcode, err)
 		}
 		src, err := newImm8(bytes.NewReader(b))
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x3c")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instCmp{dest: reg8{value: AL}, src: src}
 
@@ -1052,14 +1057,14 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0x72:
 		offset, err := memory.readInt8(currentAddress)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instJb{rel8: offset}
 
 	case 0x73:
 		imm8, err := memory.readInt8(currentAddress)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instJae{rel8: imm8}
 
@@ -1068,7 +1073,7 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0x74:
 		imm8, err := memory.readInt8(currentAddress)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instJeRel8{rel8: imm8}
 
@@ -1077,26 +1082,26 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0x75:
 		imm8, err := memory.readInt8(currentAddress)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instJneRel8{rel8: imm8}
 
 	case 0x80:
 		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x80")
+			return failureFunc(rawOpcode, err)
 		}
 		dest, err := modRM.getEb(currentAddress, memory)
 		if err != nil {
-			return nil, -1, nil, errors.Errorf("failed to decode 0x80")
+			return failureFunc(rawOpcode, err)
 		}
 		b, err := memory.readBytes(currentAddress, 1)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x80")
+			return failureFunc(rawOpcode, err)
 		}
 		src, err := newImm8(bytes.NewReader(b))
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x80")
+			return failureFunc(rawOpcode, err)
 		}
 
 		switch modRM.reg {
@@ -1110,13 +1115,13 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 			inst = instCmp{dest: dest, src: src}
 
 		default:
-			return nil, -1, nil, errors.Errorf("unknown reg: %d", modRM.reg)
+			return failureFunc(rawOpcode, err)
 		}
 
 	case 0x81:
 		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x81")
+			return failureFunc(rawOpcode, err)
 		}
 
 		switch modRM.reg {
@@ -1125,15 +1130,15 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 			// 81 /5 iw
 			dest, err := modRM.getEv(currentAddress, memory)
 			if err != nil {
-				return nil, -1, nil, errors.Errorf("failed to decode 0x81")
+				return failureFunc(rawOpcode, err)
 			}
 			b, err := memory.readBytes(currentAddress, 2)
 			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to decode 0x81")
+				return failureFunc(rawOpcode, err)
 			}
 			src, err := newImm16(bytes.NewReader(b))
 			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to decode 0x81")
+				return failureFunc(rawOpcode, err)
 			}
 			inst = instSub{dest: dest, src: src}
 
@@ -1142,20 +1147,20 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 			// 81 /7 iw
 			dest, err := modRM.getEv(currentAddress, memory)
 			if err != nil {
-				return nil, -1, nil, errors.Errorf("failed to decode 0x81")
+				return failureFunc(rawOpcode, err)
 			}
 			b, err := memory.readBytes(currentAddress, 2)
 			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to decode 0x81")
+				return failureFunc(rawOpcode, err)
 			}
 			src, err := newImm16(bytes.NewReader(b))
 			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to decode 0x81")
+				return failureFunc(rawOpcode, err)
 			}
 			inst = instCmp{dest: dest, src: src}
 
 		default:
-			return inst, -1, nil, errors.Errorf("unknown reg value: %d", modRM.reg)
+			return failureFunc(rawOpcode, err)
 		}
 
 	// add r/m16, imm8
@@ -1164,19 +1169,19 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0x83:
 		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x83")
+			return failureFunc(rawOpcode, err)
 		}
 		dest, err := modRM.getEv(currentAddress, memory)
 		if err != nil {
-			return nil, -1, nil, errors.Errorf("failed to decode 0x83")
+			return failureFunc(rawOpcode, err)
 		}
 		b, err := memory.readBytes(currentAddress, 1)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x83")
+			return failureFunc(rawOpcode, err)
 		}
 		src, err := newImm8(bytes.NewReader(b))
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x83")
+			return failureFunc(rawOpcode, err)
 		}
 
 		switch modRM.reg {
@@ -1193,7 +1198,7 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 			inst = instCmp{dest: dest, src: src}
 
 		default:
-			return nil, -1, nil, errors.Errorf("expect reg is 0 but %d", modRM.reg)
+			return failureFunc(rawOpcode, err)
 		}
 
 	// 88 /r
@@ -1201,15 +1206,15 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0x88:
 		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x88")
+			return failureFunc(rawOpcode, err)
 		}
 		dest, err := modRM.getEb(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x88")
+			return failureFunc(rawOpcode, err)
 		}
 		src, err := modRM.getGb()
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x88")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instMov{dest: dest, src: src}
 
@@ -1218,15 +1223,15 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0x89:
 		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x89")
+			return failureFunc(rawOpcode, err)
 		}
 		dest, err := modRM.getEv(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x89")
+			return failureFunc(rawOpcode, err)
 		}
 		src, err := modRM.getGv()
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x89")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instMov{dest: dest, src: src}
 
@@ -1235,15 +1240,15 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0x8a:
 		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8a")
+			return failureFunc(rawOpcode, err)
 		}
 		dest, err := modRM.getGb()
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8a")
+			return failureFunc(rawOpcode, err)
 		}
 		src, err := modRM.getEb(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8a")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instMov{dest: dest, src: src}
 
@@ -1252,15 +1257,15 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0x8b:
 		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8b")
+			return failureFunc(rawOpcode, err)
 		}
 		dest, err := modRM.getGv()
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8b")
+			return failureFunc(rawOpcode, err)
 		}
 		src, err := modRM.getEv(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8b")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instMov{dest: dest, src: src}
 
@@ -1269,15 +1274,15 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0x8c:
 		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8c")
+			return failureFunc(rawOpcode, err)
 		}
 		dest, err := modRM.getEv(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8c")
+			return failureFunc(rawOpcode, err)
 		}
 		src, err := modRM.getSw()
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8c")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instMov{dest: dest, src: src}
 
@@ -1286,15 +1291,15 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0x8d:
 		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8d")
+			return failureFunc(rawOpcode, err)
 		}
 		dest, err := modRM.getGv()
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8d")
+			return failureFunc(rawOpcode, err)
 		}
 		src, err := modRM.getM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8d")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instLea{dest: dest, src: src}
 
@@ -1304,15 +1309,15 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0x8e:
 		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8e")
+			return failureFunc(rawOpcode, err)
 		}
 		dest, err := modRM.getSw()
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8e")
+			return failureFunc(rawOpcode, err)
 		}
 		src, err := modRM.getEw(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x8e")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instMov{dest: dest, src: src}
 
@@ -1321,7 +1326,7 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0xa1:
 		imm, err := memory.readWord(currentAddress)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm16")
+			return failureFunc(rawOpcode, err)
 		}
 		dest := reg16{value: AX}
 		src := mem16Disp16{offset: imm}
@@ -1332,7 +1337,7 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0xa2:
 		offset, err := memory.readWord(currentAddress)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm16")
+			return failureFunc(rawOpcode, err)
 		}
 		dest := mem8Disp16{offset: offset}
 		src := reg8{value: AL}
@@ -1343,7 +1348,7 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0xa3:
 		offset, err := memory.readWord(currentAddress)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm16")
+			return failureFunc(rawOpcode, err)
 		}
 		dest := mem16Disp16{offset: offset}
 		src := reg16{value: AX}
@@ -1358,15 +1363,15 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0xb0, 0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7:
 		imm, err := memory.readBytes(currentAddress, 1)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
+			return failureFunc(rawOpcode, err)
 		}
 		dest, err := newReg8(rawOpcode - 0xb0)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to create dest operand")
+			return failureFunc(rawOpcode, err)
 		}
 		src, err := newImm8(bytes.NewReader(imm))
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to create src operand")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instMov{dest: dest, src: src}
 
@@ -1376,15 +1381,15 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 		// ax
 		bs, err := memory.readBytes(currentAddress, 2)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode imm8")
+			return failureFunc(rawOpcode, err)
 		}
 		dest, err := newReg16(rawOpcode - 0xb8)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "fialed to create dest operand")
+			return failureFunc(rawOpcode, err)
 		}
 		src, err := newImm16(bytes.NewReader(bs))
 		if err != nil {
-			return inst, -1, nil, errors.Errorf("failed to create dest operand")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instMov{dest: dest, src: src}
 
@@ -1392,26 +1397,26 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0xc1:
 		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xc1")
+			return failureFunc(rawOpcode, err)
 		}
 		dest, err := modRM.getEv(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xc1")
+			return failureFunc(rawOpcode, err)
 		}
 		bs, err := memory.readBytes(currentAddress, 1)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xc1")
+			return failureFunc(rawOpcode, err)
 		}
 		src, err := newImm8(bytes.NewReader(bs))
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xc1")
+			return failureFunc(rawOpcode, err)
 		}
 
 		switch modRM.reg {
 		case 4:
 			inst = instShl{dest: dest, src: src}
 		default:
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xc1")
+			return failureFunc(rawOpcode, err)
 		}
 
 	// ret (near return)
@@ -1423,24 +1428,24 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0xc7:
 		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xc7")
+			return failureFunc(rawOpcode, err)
 		}
 
 		if modRM.reg != 0 {
-			return inst, -1, nil, errors.Errorf("reg should be 0 but %d", modRM.reg)
+			return failureFunc(rawOpcode, err)
 		}
 
 		dest, err := modRM.getEv(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xc7")
+			return failureFunc(rawOpcode, err)
 		}
 		bs, err := memory.readBytes(currentAddress, 2)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xc7")
+			return failureFunc(rawOpcode, err)
 		}
 		src, err := newImm16(bytes.NewReader(bs))
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xc7")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instMov{dest: dest, src: src}
 
@@ -1448,18 +1453,18 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0xcd:
 		operand, err := memory.readByte(currentAddress)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to parse operand")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instInt{operand: operand}
 
 	case 0xd1:
 		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xd1")
+			return failureFunc(rawOpcode, err)
 		}
 		dest, err := modRM.getEv(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xd1")
+			return failureFunc(rawOpcode, err)
 		}
 		src := imm8{value: 1}
 
@@ -1475,14 +1480,14 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 			inst = instShr{dest: dest, src: src}
 
 		default:
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xd1")
+			return failureFunc(rawOpcode, err)
 		}
 
 	// call rel16
 	case 0xe8:
 		rel, err := memory.readInt16(currentAddress)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to parse int16")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instCall{rel: rel}
 
@@ -1490,7 +1495,7 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0xe9:
 		rel, err := memory.readInt16(currentAddress)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to parse int16")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instJmpRel16{rel: rel}
 
@@ -1498,14 +1503,14 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0xeb:
 		rel, err := memory.readInt8(currentAddress)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to parse int16")
+			return failureFunc(rawOpcode, err)
 		}
 		inst = instJmpRel16{rel: int16(rel)}
 
 	case 0xf3:
 		stringOperation, err := memory.readByte(currentAddress)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to parse stringOperation")
+			return failureFunc(rawOpcode, err)
 		}
 		switch stringOperation {
 		case 0xa4:
@@ -1521,7 +1526,7 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 			// repe scasw
 			inst = instRepeScasw{}
 		default:
-			return inst, -1, nil, errors.Errorf("not yet implemented string instruction")
+			return failureFunc(rawOpcode, err)
 		}
 
 	// sti
@@ -1535,18 +1540,18 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0xff:
 		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xff")
+			return failureFunc(rawOpcode, err)
 		}
 
 		switch modRM.reg {
 		case 2:
 			operand, err := modRM.getEv(currentAddress, memory)
 			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to decode 0xc7")
+				return failureFunc(rawOpcode, err)
 			}
 			inst = instCallAbsoluteIndirectMem16{operand: operand}
 		default:
-			return inst, -1, nil, errors.Wrap(err, "failed to decode 0xff")
+			return failureFunc(rawOpcode, err)
 		}
 
 	default:
