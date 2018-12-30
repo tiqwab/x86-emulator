@@ -541,9 +541,9 @@ type instSti struct {
 
 }
 
-type instAndReg8Imm8 struct {
-	reg registerB
-	imm8 uint8
+type instAnd struct {
+	dest operand
+	src operand
 }
 
 type instAndMem8Reg8 struct {
@@ -1055,41 +1055,27 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 		if err != nil {
 			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x80")
 		}
+		dest, err := modRM.getEb(currentAddress, memory)
+		if err != nil {
+			return nil, -1, nil, errors.Errorf("failed to decode 0x80")
+		}
+		b, err := memory.readBytes(currentAddress, 1)
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x80")
+		}
+		src, err := newImm8(bytes.NewReader(b))
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x80")
+		}
 
 		switch modRM.reg {
 		// and r/m8, imm8
 		case 4:
-			if modRM.mod != 3 {
-				return nil, -1, nil, errors.Errorf("expect mod is %d but %d", 3, modRM.mod)
-			}
-
-			imm, err := memory.readByte(currentAddress)
-			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to parse imm8")
-			}
-
-			regB, err := toRegisterB(uint8(modRM.rm))
-			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "unknown register")
-			}
-
-			inst = instAndReg8Imm8{reg: regB, imm8: imm}
+			inst = instAnd{dest: dest, src: src}
 
 		// cmp r/m8,imm8
 		// 80 /7 ib
 		case 7:
-			dest, err := modRM.getEb(currentAddress, memory)
-			if err != nil {
-				return nil, -1, nil, errors.Errorf("failed to decode 0x80")
-			}
-			b, err := memory.readBytes(currentAddress, 1)
-			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to decode 0x80")
-			}
-			src, err := newImm8(bytes.NewReader(b))
-			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to decode 0x80")
-			}
 			inst = instCmp{dest: dest, src: src}
 
 		default:
@@ -2214,20 +2200,17 @@ func execSti(inst instSti, state state, memory *memory) (state, error) {
 	return state, nil
 }
 
-func execAndReg8Imm8(inst instAndReg8Imm8, state state, memory *memory) (state, error) {
-	switch inst.reg {
-	case AL:
-		state.ax &= word(uint16(0xff << 8) + uint16(inst.imm8))
-	case CL:
-		state.cx &= word(uint16(0xff << 8) + uint16(inst.imm8))
-	case DL:
-		state.dx &= word(uint16(0xff << 8) + uint16(inst.imm8))
-	case BL:
-		state.bx &= word(uint16(0xff << 8) + uint16(inst.imm8))
-	default:
-		return state, errors.Errorf("unknown register: %v", inst.reg)
+func execAnd(inst instAnd, state state, memory *memory) (state, error) {
+	var l, r int
+	var err error
+	if r, err = inst.src.read(state, memory); err != nil {
+		return state, err
 	}
-	return state, nil
+	if l, err = inst.dest.read(state, memory); err != nil {
+		return state, err
+	}
+	state, err = inst.dest.write(l & r, state, memory)
+	return state, err
 }
 
 func execAndMem8Reg8(inst instAndMem8Reg8, state state, memory *memory) (state, error) {
@@ -2670,8 +2653,8 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execJmpRel16(inst, state, memory)
 	case instSti:
 		return execSti(inst, state, memory)
-	case instAndReg8Imm8:
-		return execAndReg8Imm8(inst, state, memory)
+	case instAnd:
+		return execAnd(inst, state, memory)
 	case instAndMem8Reg8:
 		return execAndMem8Reg8(inst, state, memory)
 	case instAddReg16Reg16:

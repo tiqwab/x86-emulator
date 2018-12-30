@@ -601,7 +601,9 @@ func TestDecodeAndReg8Imm8(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instAndReg8Imm8{reg: BL, imm8: 0xf0}
+	dest := reg8{value: BL}
+	src := imm8{value: -16}
+	expected := instAnd{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
