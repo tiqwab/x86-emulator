@@ -576,11 +576,6 @@ type instCmpMem8Imm8 struct {
 	imm8 int8
 }
 
-type instCmpMem16Imm8 struct {
-	offset word
-	imm8 int8
-}
-
 type instJneRel8 struct {
 	rel8 int8
 }
@@ -1201,20 +1196,20 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 
 		// cmp
 		case 7:
-			switch modRM.mod {
-			case 0:
-				offset, err := memory.readWord(currentAddress)
-				if err != nil {
-					return nil, -1, nil, errors.Wrap(err, "failed to parse disp16")
-				}
-				imm8, err := memory.readInt8(currentAddress)
-				if err != nil {
-					return nil, -1, nil, errors.Wrap(err, "failed to parse imm8")
-				}
-				inst = instCmpMem16Imm8{offset: offset, imm8: imm8}
-			default:
-				return nil, -1, nil, errors.Errorf("not yet implemented for mod: %d", modRM.mod)
+			dest, err := modRM.getEv(currentAddress, memory)
+			if err != nil {
+				return nil, -1, nil, errors.Errorf("failed to decode 0x83")
 			}
+			b, err := memory.readBytes(currentAddress, 1)
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to decode 0x83")
+			}
+			src, err := newImm8(bytes.NewReader(b))
+			if err != nil {
+				return inst, -1, nil, errors.Wrap(err, "failed to decode 0x83")
+			}
+			inst = instCmp{dest: dest, src: src}
+
 		default:
 			return nil, -1, nil, errors.Errorf("expect reg is 0 but %d", modRM.reg)
 		}
@@ -2376,27 +2371,6 @@ func execInstCmpMem8Imm8(inst instCmpMem8Imm8, state state, memory *memory, segm
 	return state, nil
 }
 
-func execInstCmpMem16Imm8(inst instCmpMem16Imm8, state state, memory *memory) (state, error) {
-	address := newAddressFromWord(state.ds, inst.offset)
-	v, err := memory.readInt16(address)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstCmpMem8Imm8")
-	}
-
-	if v == int16(inst.imm8) {
-		state = state.setZF()
-		state = state.resetCF()
-	} else if v < int16(inst.imm8) {
-		state = state.resetZF()
-		state = state.setCF()
-	} else {
-		state = state.resetZF()
-		state = state.resetCF()
-	}
-
-	return state, nil
-}
-
 func execInstJneRel8(inst instJneRel8, state state) (state, error) {
 	if state.isNotActiveZF() {
 		state.ip = word(int16(state.ip) + int16(inst.rel8))
@@ -2753,8 +2727,6 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execCmp(inst, state, memory, segmentOverride)
 	case instCmpMem8Imm8:
 		return execInstCmpMem8Imm8(inst, state, memory, segmentOverride)
-	case instCmpMem16Imm8:
-		return execInstCmpMem16Imm8(inst, state, memory)
 	case instJneRel8:
 		return execInstJneRel8(inst, state)
 	case instJb:
