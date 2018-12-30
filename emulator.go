@@ -581,11 +581,6 @@ type instCmpMem16Imm8 struct {
 	imm8 int8
 }
 
-type instCmpReg8Imm8 struct {
-	reg8 registerB
-	imm8 int8
-}
-
 type instJneRel8 struct {
 	rel8 int8
 }
@@ -923,11 +918,15 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	// cmp al,imm8
 	// 3c ib
 	case 0x3c:
-		imm8, err := memory.readInt8(currentAddress)
+		b, err := memory.readBytes(currentAddress, 1)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to parse as int8")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x3c")
 		}
-		inst = instCmpReg8Imm8{reg8: AL, imm8: imm8}
+		src, err := newImm8(bytes.NewReader(b))
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x3c")
+		}
+		inst = instCmp{dest: reg8{value: AL}, src: src}
 
 	// inc ax
 	case 0x40:
@@ -2398,24 +2397,6 @@ func execInstCmpMem16Imm8(inst instCmpMem16Imm8, state state, memory *memory) (s
 	return state, nil
 }
 
-func execInstCmpReg8Imm8(inst instCmpReg8Imm8, state state, memory *memory) (state, error) {
-	v, err := state.readByteGeneralReg(inst.reg8)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execInstCmpReg8Imm8")
-	}
-	if v == uint8(inst.imm8) {
-		state = state.setZF()
-		state = state.resetCF()
-	} else if v < uint8(inst.imm8) {
-		state = state.resetZF()
-		state = state.setCF()
-	} else {
-		state = state.resetZF()
-		state = state.resetCF()
-	}
-	return state, nil
-}
-
 func execInstJneRel8(inst instJneRel8, state state) (state, error) {
 	if state.isNotActiveZF() {
 		state.ip = word(int16(state.ip) + int16(inst.rel8))
@@ -2774,8 +2755,6 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execInstCmpMem8Imm8(inst, state, memory, segmentOverride)
 	case instCmpMem16Imm8:
 		return execInstCmpMem16Imm8(inst, state, memory)
-	case instCmpReg8Imm8:
-		return execInstCmpReg8Imm8(inst, state, memory)
 	case instJneRel8:
 		return execInstJneRel8(inst, state)
 	case instJb:

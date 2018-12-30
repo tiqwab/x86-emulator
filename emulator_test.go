@@ -722,7 +722,9 @@ func TestDecodeCmpAlImm8(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instCmpReg8Imm8{reg8: AL, imm8: 0x03}
+	dest := reg8{value: AL}
+	src := imm8{value: 0x03}
+	expected := instCmp{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
