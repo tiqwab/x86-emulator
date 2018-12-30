@@ -358,7 +358,9 @@ func TestDecodeSubReg8Reg8(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instSubReg8Reg8{dest: AL, src: AL}
+	dest := reg8{value: AL}
+	src := reg8{value: AL}
+	expected := instSub{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}

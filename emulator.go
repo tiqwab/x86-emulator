@@ -494,11 +494,6 @@ type instSub struct {
 	src operand
 }
 
-type instSubReg8Reg8 struct {
-	dest registerB
-	src registerB
-}
-
 type instSubReg16Imm16 struct {
 	dest registerW
 	imm16 int16
@@ -864,25 +859,19 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	// sub r8,r/m8
 	// 2a /r
 	case 0x2a:
-		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x2a")
 		}
-
-		switch mod {
-		case 3:
-			dest, err := toRegisterB(reg)
-			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to parse as registerB")
-			}
-			src, err := toRegisterB(uint8(rm))
-			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "failed to parse as registerB")
-			}
-			inst = instSubReg8Reg8{dest: dest, src: src}
-		default:
-			return inst, -1, nil, errors.Errorf("unknown or not implemented for mod %d", mod)
+		dest, err := modRM.getGb()
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x2a")
 		}
+		src, err := modRM.getEb(currentAddress, memory)
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x2a")
+		}
+		inst = instSub{dest: dest, src: src}
 
 	// sub r16,r/m16
 	// 2b /r
@@ -2094,22 +2083,6 @@ func execSub(inst instSub, state state, memory *memory) (state, error) {
 	return state, err
 }
 
-func execSubReg8Reg8(inst instSubReg8Reg8, state state) (state, error) {
-	srcV, err := state.readByteGeneralReg(inst.src)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execSubReg8Reg8")
-	}
-	destV, err := state.readByteGeneralReg(inst.dest)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execSubReg8Reg8")
-	}
-	state, err = state.writeByteGeneralReg(inst.dest, destV - srcV)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execSubReg8Reg8")
-	}
-	return state, nil
-}
-
 func execSubReg16Imm16(inst instSubReg16Imm16, state state) (state, error) {
 	switch inst.dest {
 	case AX:
@@ -2802,8 +2775,6 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execAdd(inst, state)
 	case instSub:
 		return execSub(inst, state, memory)
-	case instSubReg8Reg8:
-		return execSubReg8Reg8(inst, state)
 	case instSubReg16Imm16:
 		return execSubReg16Imm16(inst, state)
 	case instLea:
