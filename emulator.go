@@ -546,11 +546,6 @@ type instAnd struct {
 	src operand
 }
 
-type instAndMem8Reg8 struct {
-	offset word
-	reg8 registerB
-}
-
 type instAddReg16Reg16 struct {
 	dest registerW
 	src registerW
@@ -795,33 +790,22 @@ func decodeInstWithMemory(initialAddress *address, memory *memory) (interface{},
 	case 0x1f:
 		inst = instPopSreg{dest: DS}
 
-	// and r/m64,r8
+	// and r/m8,r8
 	// 20 /r
 	case 0x20:
-		mod, reg, rm, err := decodeModRegRM(currentAddress, memory)
+		modRM, err := newModRM(currentAddress, memory)
 		if err != nil {
-			return inst, -1, nil, errors.Wrap(err, "failed to decode mod/reg/rm")
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x20")
 		}
-
-		switch mod {
-		case 0:
-			reg8, err := toRegisterB(uint8(reg))
-			if err != nil {
-				return inst, -1, nil, errors.Wrap(err, "illegal reg value")
-			}
-			switch rm {
-			case 6:
-				offset, err := memory.readWord(currentAddress)
-				if err != nil {
-					return inst, -1, nil, errors.Wrap(err, "failed to parse word")
-				}
-				inst = instAndMem8Reg8{offset: offset, reg8: reg8}
-			default:
-				return inst, -1, nil, errors.Errorf("unknown or not implemented for rm: %d", rm)
-			}
-		default:
-			return inst, -1, nil, errors.Errorf("unknown or not implemented for mod: %d", mod)
+		dest, err := modRM.getEb(currentAddress, memory)
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x20")
 		}
+		src, err := modRM.getGb()
+		if err != nil {
+			return inst, -1, nil, errors.Wrap(err, "failed to decode 0x20")
+		}
+		inst = instAnd{dest: dest, src: src}
 
 	// segment override by ES
 	case 0x26:
@@ -2213,24 +2197,6 @@ func execAnd(inst instAnd, state state, memory *memory) (state, error) {
 	return state, err
 }
 
-func execAndMem8Reg8(inst instAndMem8Reg8, state state, memory *memory) (state, error) {
-	vReg, err := state.readByteGeneralReg(inst.reg8)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execAndMem8Reg8")
-	}
-	address := newAddressFromWord(state.ds, inst.offset)
-	vMem, err := memory.readByte(address)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execAndMem8Reg8")
-	}
-	res := byte(vReg) & vMem
-	state, err = state.writeByteGeneralReg(inst.reg8, res)
-	if err != nil {
-		return state, errors.Wrap(err, "failed in execAndMem8Reg8")
-	}
-	return state, nil
-}
-
 func execAddReg16Reg16(inst instAddReg16Reg16, state state) (state, error) {
 	srcValue, err := state.readWordGeneralReg(inst.src)
 	if err != nil {
@@ -2655,8 +2621,6 @@ func execute(shouldBeInst interface{}, state state, memory *memory, segmentOverr
 		return execSti(inst, state, memory)
 	case instAnd:
 		return execAnd(inst, state, memory)
-	case instAndMem8Reg8:
-		return execAndMem8Reg8(inst, state, memory)
 	case instAddReg16Reg16:
 		return execAddReg16Reg16(inst, state)
 	case instShrReg16Imm:

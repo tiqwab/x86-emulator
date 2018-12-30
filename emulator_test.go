@@ -616,7 +616,9 @@ func TestDecodeAndMem8Reg8(t *testing.T) {
 	if err != nil {
 		t.Errorf("%+v", err)
 	}
-	expected := instAndMem8Reg8{offset: 0x005a, reg8: AH}
+	dest := mem8Disp16{offset: 0x005a}
+	src := reg8{value: AH}
+	expected := instAnd{dest: dest, src: src}
 	if actual != expected {
 		t.Errorf("expected %v but actual %v", expected, actual)
 	}
