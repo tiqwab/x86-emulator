@@ -15,7 +15,9 @@ import (
 
 // for debug log
 type debugT bool
+
 var debug = debugT(false)
+
 func (d debugT) printf(format string, args ...interface{}) {
 	if d {
 		log.Printf(format, args...)
@@ -40,7 +42,7 @@ type memory struct {
 }
 
 type address struct {
-	seg uint16
+	seg    uint16
 	offset uint16
 }
 
@@ -65,7 +67,7 @@ func (address *address) plus16(x int16) {
 }
 
 func (address *address) realAddress() int {
-	return int(address.seg) << 4 + int(address.offset)
+	return int(address.seg)<<4 + int(address.offset)
 }
 
 // Prepare memory whose size is same as load module
@@ -92,7 +94,7 @@ func newMemoryFromHeader(loadModule []byte, header *header) *memory {
 }
 
 func (memory *memory) readBytes(at *address, n int) ([]byte, error) {
-	if at.realAddress() + (n-1) >= memory.memorySize {
+	if at.realAddress()+(n-1) >= memory.memorySize {
 		return nil, fmt.Errorf("illegal address: 0x%05x", at)
 	}
 
@@ -117,7 +119,7 @@ func (memory *memory) readWord(at *address) (word, error) {
 	if err != nil {
 		return 0, errors.Wrap(err, "failed to read word")
 	}
-	return word(buf[1]) << 8 + word(buf[0]), nil
+	return word(buf[1])<<8 + word(buf[0]), nil
 }
 
 func (memory *memory) readInt8(at *address) (int8, error) {
@@ -356,7 +358,7 @@ func (reg16 reg16) write(v int, s state, m *memory) (state, error) {
 
 // [reg] + disp8 as byte
 type mem8BaseDisp8 struct {
-	base registerW // it should be SI, DI, BP, or BX in x86 as shown in Table 2-1. 16-Bit Addressing Forms with the ModR/M Byte
+	base  registerW // it should be SI, DI, BP, or BX in x86 as shown in Table 2-1. 16-Bit Addressing Forms with the ModR/M Byte
 	disp8 int8
 }
 
@@ -418,7 +420,7 @@ func (operand mem8Disp16) address(s state) (*address, error) {
 
 // [reg] + disp8 as word
 type mem16BaseDisp8 struct {
-	base registerW // it should be SI, DI, BP, or BX in x86 as shown in Table 2-1. 16-Bit Addressing Forms with the ModR/M Byte
+	base  registerW // it should be SI, DI, BP, or BX in x86 as shown in Table 2-1. 16-Bit Addressing Forms with the ModR/M Byte
 	disp8 int8
 }
 
@@ -489,7 +491,7 @@ func newSreg(b byte) (operand, error) {
 }
 
 func (operand sreg) read(s state, m *memory) (int, error) {
-	v, err :=  s.readWordSreg(operand.value)
+	v, err := s.readWordSreg(operand.value)
 	return int(v), err
 }
 
@@ -503,12 +505,12 @@ func (operand sreg) write(v int, s state, m *memory) (state, error) {
 
 type instAdd struct {
 	dest operand
-	src operand
+	src  operand
 }
 
 type instAnd struct {
 	dest operand
-	src operand
+	src  operand
 }
 
 type instCall struct {
@@ -520,12 +522,11 @@ type instCallAbsoluteIndirectMem16 struct {
 }
 
 type instCld struct {
-
 }
 
 type instCmp struct {
 	dest operand
-	src operand
+	src  operand
 }
 
 type instDec struct {
@@ -562,12 +563,12 @@ type instJneRel8 struct {
 
 type instLea struct {
 	dest operand
-	src operandAddressing
+	src  operandAddressing
 }
 
 type instMov struct {
 	dest operand
-	src operand
+	src  operand
 }
 
 type instPop struct {
@@ -587,51 +588,44 @@ type instPushSreg struct {
 }
 
 type instRepeScasb struct {
-
 }
 
 type instRepeScasw struct {
-
 }
 
 type instRepMovsb struct {
-
 }
 
 type instRepStosb struct {
-
 }
 
 type instRet struct {
-
 }
 
 type instShl struct {
 	dest operand
-	src operand
+	src  operand
 }
 
 type instShr struct {
 	dest operand
-	src operand
+	src  operand
 }
 
 type instSti struct {
-
 }
 
 type instStosb struct {
-
 }
 
 type instSub struct {
 	dest operand
-	src operand
+	src  operand
 }
 
 type instXor struct {
 	dest operand
-	src operand
+	src  operand
 }
 
 // -----------
@@ -643,7 +637,7 @@ type instXor struct {
 type modRM struct {
 	mod byte
 	reg byte
-	rm byte
+	rm  byte
 }
 
 func newModRM(at *address, mem *memory) (modRM, error) {
@@ -653,9 +647,9 @@ func newModRM(at *address, mem *memory) (modRM, error) {
 			return 0, 0, 0, errors.Wrap(err, "failed to parse byte")
 		}
 
-		mod := (buf & 0xc0) >> 6     // 0b11000000
-		reg := (buf & 0x38) >> 3     // 0b00111000
-		rm  := buf & 0x07 // 0b00000111
+		mod := (buf & 0xc0) >> 6 // 0b11000000
+		reg := (buf & 0x38) >> 3 // 0b00111000
+		rm := buf & 0x07         // 0b00000111
 
 		return mod, reg, rm, nil
 	}
@@ -1609,10 +1603,10 @@ func intHandler09(s *state, memory *memory) error {
 // FIXME: Type general registers, segment registers respectively
 type state struct {
 	ax, cx, dx, bx, sp, bp, si, di, ss, cs, ip, ds, es word
-	eflags dword
-	exitCode                   exitCode
-	shouldExit                 bool
-	intHandlers                intHandlers
+	eflags                                             dword
+	exitCode                                           exitCode
+	shouldExit                                         bool
+	intHandlers                                        intHandlers
 }
 
 const (
@@ -1653,10 +1647,10 @@ func newState(header *header, customIntHandlers intHandlers) state {
 	}
 
 	return state{
-		sp: header.exInitSP,
-		ss: header.exInitSS,
-		ip: header.exInitIP,
-		cs: header.exInitCS,
+		sp:          header.exInitSP,
+		ss:          header.exInitSS,
+		ip:          header.exInitIP,
+		cs:          header.exInitCS,
 		intHandlers: intHandlers}
 }
 
@@ -1837,10 +1831,10 @@ func (s state) readWordSreg(r registerS) (word, error) {
 	case DS:
 		return s.ds, nil
 		/*
-	case FS:
-		return s.fs, nil
-	case GS:
-		return s.gs, nil
+			case FS:
+				return s.fs, nil
+			case GS:
+				return s.gs, nil
 		*/
 	default:
 		return 0, errors.Errorf("illegal number for registerS:%d", r)
@@ -1917,10 +1911,10 @@ func (s state) writeWordSreg(r registerS, w word) (state, error) {
 		s.ds = w
 		return s, nil
 		/*
-	case FS:
-		return s.fs, nil
-	case GS:
-		return s.gs, nil
+			case FS:
+				return s.fs, nil
+			case GS:
+				return s.gs, nil
 		*/
 	default:
 		return s, errors.Errorf("illegal number for registerS:%d", r)
@@ -1987,7 +1981,7 @@ func execShl(inst instShl, state state, memory *memory) (state, error) {
 		return state, err
 	}
 
-	state, err = inst.dest.write(l << uint(r), state, memory)
+	state, err = inst.dest.write(l<<uint(r), state, memory)
 	return state, err
 }
 
@@ -2002,7 +1996,7 @@ func execShr(inst instShr, state state, memory *memory) (state, error) {
 		return state, err
 	}
 
-	state, err = inst.dest.write(l >> uint(r), state, memory)
+	state, err = inst.dest.write(l>>uint(r), state, memory)
 	return state, err
 }
 
@@ -2144,7 +2138,7 @@ func execAnd(inst instAnd, state state, memory *memory) (state, error) {
 	if l, err = inst.dest.read(state, memory); err != nil {
 		return state, err
 	}
-	state, err = inst.dest.write(l & r, state, memory)
+	state, err = inst.dest.write(l&r, state, memory)
 	return state, err
 }
 
@@ -2246,12 +2240,12 @@ func execScasb(state state, memory *memory) (state, error) {
 		state = state.resetZF()
 	}
 	if state.isNotActiveDF() {
-		state, err = state.writeWordGeneralReg(DI, vDI + 1)
+		state, err = state.writeWordGeneralReg(DI, vDI+1)
 		if err != nil {
 			return state, errors.Wrap(err, "failed in execScasb")
 		}
 	} else {
-		state, err = state.writeWordGeneralReg(DI, vDI - 1)
+		state, err = state.writeWordGeneralReg(DI, vDI-1)
 		if err != nil {
 			return state, errors.Wrap(err, "failed in execScasb")
 		}
@@ -2283,12 +2277,12 @@ func execScasw(state state, memory *memory) (state, error) {
 		state = state.resetZF()
 	}
 	if state.isNotActiveDF() {
-		state, err = state.writeWordGeneralReg(DI, vDI + 2)
+		state, err = state.writeWordGeneralReg(DI, vDI+2)
 		if err != nil {
 			return state, errors.Wrap(err, "failed in execScasb")
 		}
 	} else {
-		state, err = state.writeWordGeneralReg(DI, vDI - 2)
+		state, err = state.writeWordGeneralReg(DI, vDI-2)
 		if err != nil {
 			return state, errors.Wrap(err, "failed in execScasb")
 		}
@@ -2322,20 +2316,20 @@ func execMovsb(state state, memory *memory) (state, error) {
 		return state, errors.Wrap(err, "failed in execScasb")
 	}
 	if state.isNotActiveDF() {
-		state, err = state.writeWordGeneralReg(SI, vSI + 1)
+		state, err = state.writeWordGeneralReg(SI, vSI+1)
 		if err != nil {
 			return state, errors.Wrap(err, "failed in execScasb")
 		}
-		state, err = state.writeWordGeneralReg(DI, vDI + 1)
+		state, err = state.writeWordGeneralReg(DI, vDI+1)
 		if err != nil {
 			return state, errors.Wrap(err, "failed in execScasb")
 		}
 	} else {
-		state, err = state.writeWordGeneralReg(SI, vSI - 1)
+		state, err = state.writeWordGeneralReg(SI, vSI-1)
 		if err != nil {
 			return state, errors.Wrap(err, "failed in execScasb")
 		}
-		state, err = state.writeWordGeneralReg(DI, vDI - 1)
+		state, err = state.writeWordGeneralReg(DI, vDI-1)
 		if err != nil {
 			return state, errors.Wrap(err, "failed in execScasb")
 		}
@@ -2361,12 +2355,12 @@ func execStosb(state state, memory *memory) (state, error) {
 		return state, errors.Wrap(err, "failed in execStosb")
 	}
 	if state.isNotActiveDF() {
-		state, err = state.writeWordGeneralReg(DI, vDI + 1)
+		state, err = state.writeWordGeneralReg(DI, vDI+1)
 		if err != nil {
 			return state, errors.Wrap(err, "failed in execStosb")
 		}
 	} else {
-		state, err = state.writeWordGeneralReg(DI, vDI - 1)
+		state, err = state.writeWordGeneralReg(DI, vDI-1)
 		if err != nil {
 			return state, errors.Wrap(err, "failed in execStosb")
 		}
@@ -2374,6 +2368,8 @@ func execStosb(state state, memory *memory) (state, error) {
 	return state, nil
 }
 
+// ref. https://www.csc.depauw.edu/~bhoward/asmtut/asmtut7.html
+// ref. http://hp.vector.co.jp/authors/VA014520/asmhsp/chap6.html
 func execRepeScasb(inst instRepeScasb, state state, memory *memory) (state, error) {
 	count, err := state.readWordGeneralReg(CX)
 	if err != nil {
@@ -2462,7 +2458,7 @@ func execInc(inst instInc, state state) (state, error) {
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execInc")
 	}
-	state, err = state.writeWordGeneralReg(inst.dest, v + 1)
+	state, err = state.writeWordGeneralReg(inst.dest, v+1)
 	// TODO: Set ZF (so it is necessary to handle overflow...)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execInc")
@@ -2475,7 +2471,7 @@ func execDec(inst instDec, state state) (state, error) {
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execInc")
 	}
-	state, err = state.writeWordGeneralReg(inst.dest, v - 1)
+	state, err = state.writeWordGeneralReg(inst.dest, v-1)
 	// TODO: Set ZF (so it is necessary to handle overflow...)
 	if err != nil {
 		return state, errors.Wrap(err, "failed in execInc")
@@ -2494,7 +2490,7 @@ func execXor(inst instXor, state state, memory *memory) (state, error) {
 		return state, err
 	}
 
-	state, err = inst.dest.write(l ^ r, state, memory)
+	state, err = inst.dest.write(l^r, state, memory)
 	return state, err
 }
 
